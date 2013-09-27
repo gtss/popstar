@@ -49,6 +49,15 @@
 
 (def seq-from-matrix (partial apply concat))
 
+(defn choose-points-fn-maker [choose-fn]
+  (comp
+    (partial reduce #(conj %1 (choose-fn (second %2))) [])
+    (partial group-by first)))
+
+(def high-points (choose-points-fn-maker (partial apply max-key second)))
+
+(def low-points (choose-points-fn-maker (partial apply min-key second)))
+
 (defn group
   ([table]
     (let [state (init-state table)]
@@ -78,7 +87,9 @@
 (defprotocol State
   (total-score [path])
   (current-state [path])
-  (end-score [path]))
+  (end-score [path])
+  (prev-step-groups [path])
+  (reusable-groups [path]))
 
 (defrecord Path [table actions]
   State
@@ -89,11 +100,60 @@
       (reduce eliminate state (:actions path))))
   (end-score [path]
     (let [state (current-state path)]
-      (+ (total-score path) (bonus (count state))))))
+      (+ (total-score path) (bonus (count state)))))
+  (prev-step-groups [path]
+    (let [actions (:actions path)]
+      (if (empty? actions)
+        nil
+        (group table (current-state (->Path (:table path) (subvec actions 0 (dec (count actions)))))))))
+  (reusable-groups [path]
+    (when-let [last-action (last (:actions path))]
+      (let [direct-low-points (low-points last-action)
+            all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
+                             (update-in (apply min-key first direct-low-points) [0] dec)
+                             (update-in (apply max-key first direct-low-points) [0] inc))]
+        (filter
+          (partial not-any?
+            #(some
+               (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
+               all-low-points))
+          (prev-step-groups path))))))
 
 ;(def total-score (memoize total-score))
 ;(def current-state (memoize current-state))
 ;(def end-score (memoize end-score))
+
+(defrecord CachedPath [table actions total-score current-state end-score prev-step-groups reusable-groups]
+  State
+  (total-score [path]
+    (:total-score path))
+  (current-state [path]
+    (:current-state path))
+  (end-score [path]
+    (:end-score path))
+  (prev-step-groups [path]
+    (:prev-step-groups path))
+  (reusable-groups [path]
+    (:reusable-groups path)))
+
+(defn cached-path [table actions prev-step-groups]
+  (let [total-score (reduce + (map (comp score count) actions))
+        state (init-state table)
+        current-state (reduce eliminate state actions)
+        end-score (+ total-score (bonus (count current-state)))]
+    (if (empty? actions)
+      (->CachedPath table actions total-score current-state end-score prev-step-groups [])
+      (let [direct-low-points (low-points (last actions))
+            all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
+                             (update-in (apply min-key first direct-low-points) [0] dec)
+                             (update-in (apply max-key first direct-low-points) [0] inc))
+            reusable-groups (filter
+                              (partial not-any?
+                                #(some
+                                   (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
+                                   all-low-points))
+                              prev-step-groups)]
+        (->CachedPath table actions total-score current-state end-score prev-step-groups reusable-groups)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
@@ -113,7 +173,7 @@
               :nc ))))
 
 (defn popstars [table]
-  (loop [available #{(->Path table [])} saw {} wanted []]
+  (loop [available #{(cached-path table [] [])} saw {} wanted []]
     (if-let [head (first available)]
       (let [groups (group table (current-state head))]
         (if (empty? groups)
@@ -123,7 +183,7 @@
               (if (> score (wanted 1))
                 (recur (disj available head) saw [head (end-score head)])
                 (recur (disj available head) saw wanted))))
-          (let [paths (map #(->Path table (conj (:actions head) %)) groups)
+          (let [paths (map #(cached-path table (conj (:actions head) %) groups) groups)
                 new-saw (loop [init paths result-map {}]
                           (if (empty? init)
                             result-map
