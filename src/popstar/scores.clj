@@ -1,7 +1,7 @@
 (ns popstar.scores
   (:require [clojure.set]))
 
-(def mp #(do (pr %) %))
+(def mp #(do (prn %) %))
 
 (defn score [n] (* 5M n n))
 
@@ -81,8 +81,8 @@
 
 (defn eliminate [state agroup]
   (filterv not-empty
-    (mapv (partial filterv (complement nil?))
-      (reduce #(assoc-in %1 %2 nil) state agroup))))
+         (mapv (partial filterv (complement nil?))
+           (reduce #(assoc-in %1 %2 nil) state agroup))))
 
 (defprotocol State
   (total-score [path])
@@ -111,13 +111,19 @@
       (let [direct-low-points (low-points last-action)
             all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
                              (update-in (apply min-key first direct-low-points) [0] dec)
-                             (update-in (apply max-key first direct-low-points) [0] inc))]
-        (filter
-          (partial not-any?
-            #(some
-               (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
-               all-low-points))
-          (prev-step-groups path))))))
+                             (update-in (apply max-key first direct-low-points) [0] inc))
+            zero-y-points (sort-by first > (filter (comp (partial = 0) second) direct-low-points))]
+        (reduce #(map (comp set
+                        (partial map
+                          (fn [point] (if (> (first point) (first %2))
+                                        (update-in point [0] dec)
+                                        point)))) %1)
+          (filter
+            (partial not-any?
+              #(some
+                 (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
+                 all-low-points))
+            (prev-step-groups path)) zero-y-points)))))
 
 ;(def total-score (memoize total-score))
 ;(def current-state (memoize current-state))
@@ -147,12 +153,19 @@
             all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
                              (update-in (apply min-key first direct-low-points) [0] dec)
                              (update-in (apply max-key first direct-low-points) [0] inc))
-            reusable-groups (filter
-                              (partial not-any?
-                                #(some
-                                   (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
-                                   all-low-points))
-                              prev-step-groups)]
+            zero-y-points (sort-by first > (filter (comp (partial = 0) second) direct-low-points))
+            reusable-groups (reduce
+                              #(map (comp set
+                                      (partial map
+                                        (fn [point] (if (> (first point) (first %2))
+                                                      (update-in point [0] dec)
+                                                      point)))) %1)
+                              (filter
+                                (partial not-any?
+                                  #(some
+                                     (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
+                                     all-low-points))
+                                prev-step-groups) zero-y-points)]
         (->CachedPath table actions total-score current-state end-score prev-step-groups reusable-groups)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
@@ -175,7 +188,11 @@
 (defn popstars [table]
   (loop [available #{(cached-path table [] [])} saw {} wanted []]
     (if-let [head (first available)]
-      (let [groups (group table (current-state head))]
+      (let [state (current-state head)
+            all-points (points state)
+            saw (set (seq-from-matrix (reusable-groups head)))
+            next-point (first (filter (complement saw) all-points))
+            groups (concat (reusable-groups head) (group table state all-points next-point saw))]
         (if (empty? groups)
           (if (empty? wanted)
             (recur (disj available head) saw [head (end-score head)])
