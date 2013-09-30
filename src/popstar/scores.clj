@@ -94,48 +94,6 @@
   (prev-step-groups [path])
   (reusable-groups [path]))
 
-(defrecord Path [table actions]
-  State
-  (total-score [path]
-    (reduce + (map (comp score count) (:actions path))))
-  (current-state [path]
-    (let [state (init-state (:table path))]
-      (reduce eliminate state (:actions path))))
-  (end-score [path]
-    (let [state (current-state path)]
-      (+ (total-score path) (bonus (count state)))))
-  (prev-step-groups [path]
-    (let [actions (:actions path)]
-      (if (empty? actions)
-        nil
-        (group table (current-state (->Path (:table path) (subvec actions 0 (dec (count actions)))))))))
-  (reusable-groups [path]
-    (when-let [last-action (last (:actions path))]
-      (let [direct-low-points (low-points last-action)
-            all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
-                             (update-in (apply min-key first direct-low-points) [0] dec)
-                             (update-in (apply max-key first direct-low-points) [0] inc))
-            zero-y-points (sort-by first > (filter (comp (partial = 0) second) direct-low-points))]
-        (reduce #(map (comp set
-                        (partial map
-                          (fn [point] (if (> (first point) (first %2))
-                                        (update-in point [0] dec)
-                                        point)))) %1)
-          (filter
-            (partial not-any?
-              #(some
-                 (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
-                 all-low-points))
-            (prev-step-groups path)) (filter #(let [state (current-state path)
-                                                    x (first %)
-                                                    max-point (last (state x))]
-                                                (= max-point (max-key second (filter (comp (partial = x) first) last-action))))
-                                       zero-y-points))))))
-
-;(def total-score (memoize total-score))
-;(def current-state (memoize current-state))
-;(def end-score (memoize end-score))
-
 (defrecord CachedPath [table actions total-score current-state end-score prev-step-groups reusable-groups]
   State
   (total-score [path]
