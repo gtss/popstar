@@ -1,11 +1,12 @@
 (ns popstar.scores
   (:require [clojure.set]))
 
-(def mp #(do (prn %) %))
+(defn mp ([x] (do (prn x) x))
+  ([x pred] (do (when (pred x) (prn x)) x)))
 
 (defn score [n] (* 5M n n))
 
-(defn bonus [n] (max 0 (- 2000 (* n n))))
+(defn bonus [n] (max 0 (- 2000 (* n n 20))))
 
 (def colors #{:b :g :p :r :y })
 
@@ -22,12 +23,14 @@
 
 (defn same [table state point]
   (when-let [color (get-color table state point)]
-    (loop [temp #{point} result #{}]
+    (loop [temp #{point} result #{point}]
       (if-let [current (first temp)]
         (let [neighbors (for [i [0 1] f [inc dec]]
                           (update-in current [i] f))
-              matched (set (filter #(and (= color (get-color table state %)) (not (contains? result %))) neighbors))]
-          (recur (disj (clojure.set/union temp matched) current) (conj result current)))
+              matched (filter #(and (= color (get-color table state %)) (not (contains? result %))) neighbors)]
+          (if (empty? matched)
+            (recur (disj temp current) result)
+            (recur (apply conj temp matched) (apply conj result matched))))
         result))))
 
 (defn init-state [table]
@@ -81,8 +84,8 @@
 
 (defn eliminate [state agroup]
   (filterv not-empty
-         (mapv (partial filterv (complement nil?))
-           (reduce #(assoc-in %1 %2 nil) state agroup))))
+    (mapv (partial filterv (complement nil?))
+      (reduce #(assoc-in %1 %2 nil) state agroup))))
 
 (defprotocol State
   (total-score [path])
@@ -123,7 +126,11 @@
               #(some
                  (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
                  all-low-points))
-            (prev-step-groups path)) zero-y-points)))))
+            (prev-step-groups path)) (filter #(let [state (current-state path)
+                                                    x (first %)
+                                                    max-point (last (state x))]
+                                                (= max-point (max-key second (filter (comp (partial = x) first) last-action))))
+                                       zero-y-points))))))
 
 ;(def total-score (memoize total-score))
 ;(def current-state (memoize current-state))
@@ -142,14 +149,15 @@
   (reusable-groups [path]
     (:reusable-groups path)))
 
-(defn cached-path [table actions prev-step-groups]
+(defn cached-path [table actions prev-step-groups prev-step-state]
   (let [total-score (reduce + (map (comp score count) actions))
         state (init-state table)
         current-state (reduce eliminate state actions)
         end-score (+ total-score (bonus (count current-state)))]
     (if (empty? actions)
       (->CachedPath table actions total-score current-state end-score prev-step-groups [])
-      (let [direct-low-points (low-points (last actions))
+      (let [last-action (last actions)
+            direct-low-points (low-points last-action)
             all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
                              (update-in (apply min-key first direct-low-points) [0] dec)
                              (update-in (apply max-key first direct-low-points) [0] inc))
@@ -165,7 +173,9 @@
                                   #(some
                                      (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
                                      all-low-points))
-                                prev-step-groups) zero-y-points)]
+                                prev-step-groups) (filter #(= (count (prev-step-state (first %)))
+                                                             (count (filter (comp (partial = (first %)) first) last-action)))
+                                                    zero-y-points))]
         (->CachedPath table actions total-score current-state end-score prev-step-groups reusable-groups)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
@@ -186,7 +196,7 @@
               :nc ))))
 
 (defn popstars [table]
-  (loop [available #{(cached-path table [] [])} saw {} wanted []]
+  (loop [available #{(cached-path table [] [] nil)} saw {} wanted []]
     (if-let [head (first available)]
       (let [state (current-state head)
             all-points (points state)
@@ -200,7 +210,7 @@
               (if (> score (wanted 1))
                 (recur (disj available head) saw [head (end-score head)])
                 (recur (disj available head) saw wanted))))
-          (let [paths (map #(cached-path table (conj (:actions head) %) groups) groups)
+          (let [paths (map #(cached-path table (conj (:actions head) %) groups state) groups)
                 new-saw (loop [init paths result-map {}]
                           (if (empty? init)
                             result-map
@@ -217,3 +227,9 @@
               (recur (disj available head) saw wanted)
               (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) wanted)))))
       wanted)))
+
+(defn rand-color []
+  (rand-nth (vec colors)))
+
+(defn rand-table [x y]
+  (vec (for [a (range x)] (vec (for [b (range y)] (rand-color))))))
