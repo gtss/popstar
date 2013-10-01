@@ -111,7 +111,7 @@
   (let [total-score (reduce + (map (comp score count) actions))
         state (init-state table)
         current-state (reduce eliminate state actions)
-        end-score (+ total-score (bonus (count current-state)))]
+        end-score (+ total-score (bonus (count (seq-from-matrix current-state))))]
     (if (empty? actions)
       (->CachedPath table actions total-score current-state end-score prev-step-groups [])
       (let [last-action (last actions)
