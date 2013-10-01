@@ -138,20 +138,30 @@
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
-(defn diff [path1 path2]
-  (cond
-    (and (nil? path1) (nil? path2)) :eq ;
-    (nil? path1) :lt ;
-    (nil? path2) :gt ;
-    :else (let [score1 (total-score path1) score2 (total-score path2)
-                state1 (current-state path1) state2 (current-state path2)]
-            (if (= state1 state2)
-              (condp = (compare score1 score2)
-                1 :gt ;
-                -1 :lt ;
-                0 :eq ;
-                :nc )
-              :nc ))))
+(defn end-differ [path1 path2]
+  (let [state1 (current-state path1) state2 (current-state path2)]
+    (if (= state1 state2)
+      (condp = (compare (total-score path1) (total-score path2))
+        1 :gt ;
+        -1 :lt ;
+        0 :eq ;
+        :nc )
+      :nc )))
+
+(defn diff ([path1 path2]
+             (diff path1 path2 :nc end-differ))
+  ([path1 path2 default-value & preds]
+    (cond
+      (and (nil? path1) (nil? path2)) :eq ;
+      (nil? path1) :lt ;
+      (nil? path2) :gt ;
+      :else (loop [[head tail] preds]
+              (if head
+                (let [result (head path1 path2)]
+                  (if (contains? #{nil :nc } result)
+                    (recur tail)
+                    result))
+                default-value)))))
 
 (defn popstars [table]
   (loop [available #{(cached-path table [] [] nil)} saw {} wanted []]
