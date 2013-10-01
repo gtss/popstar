@@ -88,53 +88,79 @@
       (reduce #(assoc-in %1 %2 nil) state agroup))))
 
 (defprotocol State
+  (groups [path])
+  (actions [path])
   (total-score [path])
   (current-state [path])
   (end-score [path])
   (prev-step-groups [path])
   (reusable-groups [path]))
 
-(defrecord CachedPath [table actions total-score current-state end-score prev-step-groups reusable-groups]
+(defrecord LazyCachedPath [table groups actions total-score current-state end-score prev-step-groups reusable-groups]
   State
+  (groups [path]
+    ((:groups path) path))
+  (actions [path]
+    ((:actions path) path))
   (total-score [path]
-    (:total-score path))
+    ((:total-score path) path))
   (current-state [path]
-    (:current-state path))
+    ((:current-state path) path))
   (end-score [path]
-    (:end-score path))
+    ((:end-score path) path))
   (prev-step-groups [path]
-    (:prev-step-groups path))
+    ((:prev-step-groups path) path))
   (reusable-groups [path]
-    (:reusable-groups path)))
+    ((:reusable-groups path) path)))
 
-(defn cached-path [table actions prev-step-groups prev-step-state]
-  (let [total-score (reduce + (map (comp score count) actions))
-        state (init-state table)
-        current-state (reduce eliminate state actions)
-        end-score (+ total-score (bonus (count (seq-from-matrix current-state))))]
-    (if (empty? actions)
-      (->CachedPath table actions total-score current-state end-score prev-step-groups [])
-      (let [last-action (last actions)
-            direct-low-points (low-points last-action)
-            all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
-                             (update-in (apply min-key first direct-low-points) [0] dec)
-                             (update-in (apply max-key first direct-low-points) [0] inc))
-            zero-y-points (sort-by first > (filter (comp (partial = 0) second) direct-low-points))
-            reusable-groups (reduce
-                              #(map (comp set
-                                      (partial map
-                                        (fn [point] (if (> (first point) (first %2))
-                                                      (update-in point [0] dec)
-                                                      point)))) %1)
-                              (filter
-                                (partial not-any?
-                                  #(some
-                                     (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
-                                     all-low-points))
-                                prev-step-groups) (filter #(= (count (prev-step-state (first %)))
-                                                             (count (filter (comp (partial = (first %)) first) last-action)))
-                                                    zero-y-points))]
-        (->CachedPath table actions total-score current-state end-score prev-step-groups reusable-groups)))))
+(defn lazy-cached-path [table prev-path last-action]
+  (if prev-path
+    (let [groups-fn (memoize (fn [self]
+                               (let [state (current-state self)
+                                     all-points (points state)
+                                     reused (reusable-groups self)
+                                     saw (set (seq-from-matrix reused))
+                                     next-point (first (filter (complement saw) all-points))]
+                                 (concat reused (group table state all-points next-point saw)))))
+          actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
+          total-score-fn (memoize (fn [self] (reduce + (map (comp score count) (actions self)))))
+          current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))
+          end-score-fn (memoize (fn [self] (+ (total-score self)
+                                             ((comp bonus count seq-from-matrix current-state) self))))
+          prev-step-groups-fn (memoize (fn [self] (groups prev-path)))
+          reusable-groups-fn
+          (memoize
+            (fn [self]
+              (let [direct-low-points (low-points last-action)
+                    all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
+                                     (update-in (apply min-key first direct-low-points) [0] dec)
+                                     (update-in (apply max-key first direct-low-points) [0] inc))
+                    prev-step-state (current-state prev-path)
+                    zero-y-points (sort-by first > (filter (comp (partial = 0) second) direct-low-points))]
+                (reduce
+                  #(map (comp set
+                          (partial map
+                            (fn [point] (if (> (first point) (first %2))
+                                          (update-in point [0] dec)
+                                          point)))) %1)
+                  (filter
+                    (partial not-any?
+                      #(some
+                         (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
+                         all-low-points))
+                    (prev-step-groups self)) (filter #(= (count (prev-step-state (first %)))
+                                                        (count (filter (comp (partial = (first %)) first) last-action)))
+                                               zero-y-points)))))]
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn end-score-fn prev-step-groups-fn reusable-groups-fn))
+    (let [groups-fn (memoize (fn [self] (group table (current-state self))))
+          actions-fn (fn [_] [])
+          total-score-fn (fn [_] 0)
+          current-state-fn (comp init-state :table )
+          end-score-fn (memoize (fn [self] (+ (total-score self)
+                                             ((comp bonus count seq-from-matrix current-state) self))))
+          prev-step-groups-fn (fn [_] nil)
+          reusable-groups-fn (fn [_] nil)]
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn end-score-fn prev-step-groups-fn reusable-groups-fn))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
@@ -164,36 +190,31 @@
                 default-value)))))
 
 (defn popstars [table]
-  (loop [available #{(cached-path table [] [] nil)} saw {} wanted []]
+  (loop [available #{(lazy-cached-path table nil nil)} saw {} wanted []]
     (if-let [head (first available)]
-      (let [state (current-state head)
-            all-points (points state)
-            reused (reusable-groups head)
-            next-point (first (filter (complement saw) all-points))
-            groups (concat reused (group table state all-points next-point (set (seq-from-matrix reused))))]
-        (if (empty? groups)
-          (if (empty? wanted)
-            (recur (disj available head) saw [head (end-score head)])
-            (let [score (end-score head)]
-              (if (> score (wanted 1))
-                (recur (disj available head) saw [head (end-score head)])
-                (recur (disj available head) saw wanted))))
-          (let [paths (map #(cached-path table (conj (:actions head) %) groups state) groups)
-                new-saw (loop [init paths result-map {}]
-                          (if (empty? init)
-                            result-map
-                            (let [path (first init)
-                                  state (current-state path)
-                                  difference (cond
-                                               (contains? result-map state) (diff path (result-map state))
-                                               (contains? saw state) (diff path (saw state))
-                                               :else :nc )]
-                              (if (contains? #{:gt :nc } difference)
-                                (recur (rest init) (conj result-map [state path]))
-                                (recur (rest init) result-map)))))]
-            (if (empty? new-saw)
-              (recur (disj available head) saw wanted)
-              (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) wanted)))))
+      (if-let [head-groups (not-empty (groups head))]
+        (let [paths (map #(lazy-cached-path table head %) head-groups)
+              new-saw (loop [init paths result-map {}]
+                        (if (empty? init)
+                          result-map
+                          (let [path (first init)
+                                state (current-state path)
+                                difference (cond
+                                             (contains? result-map state) (diff path (result-map state))
+                                             (contains? saw state) (diff path (saw state))
+                                             :else :nc )]
+                            (if (contains? #{:gt :nc } difference)
+                              (recur (rest init) (conj result-map [state path]))
+                              (recur (rest init) result-map)))))]
+          (if (empty? new-saw)
+            (recur (disj available head) saw wanted)
+            (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) wanted)))
+        (if (empty? wanted)
+          (recur (disj available head) saw [head (end-score head)])
+          (let [score (end-score head)]
+            (if (> score (wanted 1))
+              (recur (disj available head) saw [head (end-score head)])
+              (recur (disj available head) saw wanted)))))
       wanted)))
 
 (defn rand-color []
