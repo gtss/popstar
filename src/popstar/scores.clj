@@ -155,7 +155,7 @@
       (and (nil? path1) (nil? path2)) :eq ;
       (nil? path1) :lt ;
       (nil? path2) :gt ;
-      :else (loop [[head tail] preds]
+      :else (loop [[head & tail] preds]
               (if head
                 (let [result (head path1 path2)]
                   (if (contains? #{nil :nc } result)
@@ -168,9 +168,9 @@
     (if-let [head (first available)]
       (let [state (current-state head)
             all-points (points state)
-            saw (set (seq-from-matrix (reusable-groups head)))
+            reused (reusable-groups head)
             next-point (first (filter (complement saw) all-points))
-            groups (concat (reusable-groups head) (group table state all-points next-point saw))]
+            groups (concat reused (group table state all-points next-point (set (seq-from-matrix reused))))]
         (if (empty? groups)
           (if (empty? wanted)
             (recur (disj available head) saw [head (end-score head)])
