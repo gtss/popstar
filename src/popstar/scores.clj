@@ -18,8 +18,11 @@
 
 ;color :g
 
-(defn get-color [table state point]
-  (get-in table (get-in state point)))
+(defn get-color
+  ([table states point]
+    (get-in table (get-in states point)))
+  ([table state]
+    (get-in table state)))
 
 (defn same [table state point]
   (when-let [color (get-color table state point)]
@@ -120,6 +123,16 @@
   (+ (total-score path)
     ((comp bonus count seq-from-matrix current-state) path)))
 
+(defn simple-max-estimation [path]
+  (let [gs (vals (group-by (partial get-color (:table path)) (current-state-seq path)))
+        tmp (reduce #(if (= 1 (count %2)) (update-in %1 [1] inc) (update-in %1 [0] (partial + (score (count %2))))) [0 0] gs)]
+    (+ (total-score path) (tmp 0) (bonus (tmp 1)))))
+(defn simple-min-estimation [path]
+  (let [gs (groups path)
+        all-n (count (seq-from-matrix (current-state path)))
+        parts (+ (count gs) (- all-n (count (seq-from-matrix gs))))]
+    (apply + (total-score path) (bonus (- parts (count gs))) (map (comp score count) gs))))
+
 (def path-rate #(let [all-n (count (seq-from-matrix (current-state %))) parts (+ (count (groups %)) (- all-n (count (seq-from-matrix (groups %)))))] (if (= 0 all-n) 0 (/ parts all-n))))
 
 (defn lazy-cached-path [table prev-path last-action]
@@ -210,6 +223,7 @@
                                 difference (cond
                                              (contains? result-map state) (diff path (result-map state))
                                              (contains? saw state) (diff path (saw state))
+                                             (and (not-empty wanted) (> (wanted 1) (simple-max-estimation head))) :lt ;
                                              :else :nc )]
                             (if (contains? #{:gt :nc } difference)
                               (recur (rest init) (conj result-map [state path]))
