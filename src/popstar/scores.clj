@@ -92,11 +92,12 @@
   (actions [path])
   (total-score [path])
   (current-state [path])
-  (end-score [path])
+  (current-state-seq [path])
   (prev-step-groups [path])
-  (reusable-groups [path]))
+  (reusable-groups [path])
+  (rate [path]))
 
-(defrecord LazyCachedPath [table groups actions total-score current-state end-score prev-step-groups reusable-groups]
+(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq prev-step-groups reusable-groups rate]
   State
   (groups [path]
     ((:groups path) path))
@@ -106,12 +107,20 @@
     ((:total-score path) path))
   (current-state [path]
     ((:current-state path) path))
-  (end-score [path]
-    ((:end-score path) path))
+  (current-state-seq [path]
+    ((:current-state-seq path) path))
   (prev-step-groups [path]
     ((:prev-step-groups path) path))
   (reusable-groups [path]
-    ((:reusable-groups path) path)))
+    ((:reusable-groups path) path))
+  (rate [path]
+    ((:rate path) path)))
+
+(defn end-score [path]
+  (+ (total-score path)
+    ((comp bonus count seq-from-matrix current-state) path)))
+
+(def path-rate #(let [all-n (count (seq-from-matrix (current-state %))) parts (+ (count (groups %)) (- all-n (count (seq-from-matrix (groups %)))))] (if (= 0 all-n) 0 (/ parts all-n))))
 
 (defn lazy-cached-path [table prev-path last-action]
   (if prev-path
@@ -125,8 +134,7 @@
           actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
           total-score-fn (memoize (fn [self] (reduce + (map (comp score count) (actions self)))))
           current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))
-          end-score-fn (memoize (fn [self] (+ (total-score self)
-                                             ((comp bonus count seq-from-matrix current-state) self))))
+          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))
           prev-step-groups-fn (memoize (fn [self] (groups prev-path)))
           reusable-groups-fn
           (memoize
@@ -151,16 +159,16 @@
                     (prev-step-groups self)) (filter #(= (count (prev-step-state (first %)))
                                                         (count (filter (comp (partial = (first %)) first) last-action)))
                                                zero-y-points)))))]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn end-score-fn prev-step-groups-fn reusable-groups-fn))
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate)))
     (let [groups-fn (memoize (fn [self] (group table (current-state self))))
           actions-fn (fn [_] [])
           total-score-fn (fn [_] 0)
           current-state-fn (comp init-state :table )
-          end-score-fn (memoize (fn [self] (+ (total-score self)
-                                             ((comp bonus count seq-from-matrix current-state) self))))
+          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))
           prev-step-groups-fn (fn [_] nil)
-          reusable-groups-fn (fn [_] nil)]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn end-score-fn prev-step-groups-fn reusable-groups-fn))))
+          reusable-groups-fn (fn [_] nil)
+          ]
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
@@ -190,7 +198,7 @@
                 default-value)))))
 
 (defn popstars [table]
-  (loop [available #{(lazy-cached-path table nil nil)} saw {} wanted []]
+  (loop [available (sorted-set-by #(cond (= %1 %2) 0 (> (rate %1) (rate %2)) 1 :else -1) (lazy-cached-path table nil nil)) saw {} wanted []]
     (if-let [head (first available)]
       (if-let [head-groups (not-empty (groups head))]
         (let [paths (map #(lazy-cached-path table head %) head-groups)
@@ -213,7 +221,7 @@
           (recur (disj available head) saw [head (end-score head)])
           (let [score (end-score head)]
             (if (> score (wanted 1))
-              (recur (disj available head) saw [head (end-score head)])
+              (recur (disj available head) saw [head score])
               (recur (disj available head) saw wanted)))))
       wanted)))
 
