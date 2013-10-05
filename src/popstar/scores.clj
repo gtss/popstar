@@ -98,9 +98,11 @@
   (current-state-seq [path])
   (prev-step-groups [path])
   (reusable-groups [path])
-  (rate [path]))
+  (rate [path])
+  (max-estimation [path])
+  (min-estimation [path]))
 
-(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq prev-step-groups reusable-groups rate]
+(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq prev-step-groups reusable-groups rate max-estimation min-estimation]
   State
   (groups [path]
     ((:groups path) path))
@@ -117,7 +119,11 @@
   (reusable-groups [path]
     ((:reusable-groups path) path))
   (rate [path]
-    ((:rate path) path)))
+    ((:rate path) path))
+  (max-estimation [path]
+    ((:max-estimation path) path))
+  (min-estimation [path]
+    ((:min-estimation path) path)))
 
 (defn end-score [path]
   (+ (total-score path)
@@ -129,7 +135,7 @@
     (+ (total-score path) (tmp 0) (bonus (tmp 1)))))
 (defn simple-min-estimation [path]
   (let [gs (groups path)
-        all-n (count (seq-from-matrix (current-state path)))
+        all-n (count (current-state-seq path))
         parts (+ (count gs) (- all-n (count (seq-from-matrix gs))))]
     (apply + (total-score path) (bonus (- parts (count gs))) (map (comp score count) gs))))
 
@@ -172,7 +178,7 @@
                     (prev-step-groups self)) (filter #(= (count (prev-step-state (first %)))
                                                         (count (filter (comp (partial = (first %)) first) last-action)))
                                                zero-y-points)))))]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate)))
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate) (memoize simple-max-estimation) (memoize simple-min-estimation)))
     (let [groups-fn (memoize (fn [self] (group table (current-state self))))
           actions-fn (fn [_] [])
           total-score-fn (fn [_] 0)
@@ -181,7 +187,7 @@
           prev-step-groups-fn (fn [_] nil)
           reusable-groups-fn (fn [_] nil)
           ]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate)))))
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate) (memoize simple-max-estimation) (memoize simple-min-estimation)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
@@ -211,7 +217,7 @@
                 default-value)))))
 
 (defn popstars [table]
-  (loop [available (sorted-set-by #(cond (= %1 %2) 0 (> (rate %1) (rate %2)) 1 :else -1) (lazy-cached-path table nil nil)) saw {} wanted []]
+  (loop [available (sorted-set-by #(cond (= %1 %2) 0 (> (rate %1) (rate %2)) 1 :else -1) (lazy-cached-path table nil nil)) saw {} estimation 0 wanted []]
     (if-let [head (first available)]
       (if-let [head-groups (not-empty (groups head))]
         (let [paths (map #(lazy-cached-path table head %) head-groups)
@@ -223,20 +229,19 @@
                                 difference (cond
                                              (contains? result-map state) (diff path (result-map state))
                                              (contains? saw state) (diff path (saw state))
-                                             (and (not-empty wanted) (> (wanted 1) (simple-max-estimation head))) :lt ;
+                                             (> estimation (max-estimation head)) :lt ;
                                              :else :nc )]
                             (if (contains? #{:gt :nc } difference)
                               (recur (rest init) (conj result-map [state path]))
-                              (recur (rest init) result-map)))))]
+                              (recur (rest init) result-map)))))
+              new-estimation (max estimation (min-estimation head))]
           (if (empty? new-saw)
-            (recur (disj available head) saw wanted)
-            (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) wanted)))
-        (if (empty? wanted)
-          (recur (disj available head) saw [head (end-score head)])
-          (let [score (end-score head)]
-            (if (> score (wanted 1))
-              (recur (disj available head) saw [head score])
-              (recur (disj available head) saw wanted)))))
+            (recur (disj available head) saw new-estimation wanted)
+            (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) new-estimation wanted)))
+        (let [score (end-score head)]
+          (cond (empty? wanted) (recur (disj available head) saw (max estimation score) [head score])
+            (> score (wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
+            :else (recur (disj available head) saw estimation wanted))))
       wanted)))
 
 (defn rand-color []
