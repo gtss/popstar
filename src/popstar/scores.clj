@@ -217,7 +217,7 @@
                 default-value)))))
 
 (defn popstars [table]
-  (loop [available (sorted-set-by #(cond (= %1 %2) 0 (> (rate %1) (rate %2)) 1 :else -1) (lazy-cached-path table nil nil)) saw {} estimation 0 wanted []]
+  (loop [available (sorted-set-by #(cond (= %1 %2) 0 (> (- (min-estimation %1)) (- (min-estimation %2))) 1 :else -1) (lazy-cached-path table nil nil)) saw {} estimation 0 wanted []]
     (if-let [head (first available)]
       (if-let [head-groups (not-empty (groups head))]
         (let [paths (map #(lazy-cached-path table head %) head-groups)
