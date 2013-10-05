@@ -96,12 +96,10 @@
   (total-score [path])
   (current-state [path])
   (current-state-seq [path])
-  (prev-step-groups [path])
-  (reusable-groups [path])
   (max-estimation [path])
   (min-estimation [path]))
 
-(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq prev-step-groups reusable-groups max-estimation min-estimation]
+(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq max-estimation min-estimation]
   State
   (groups [path]
     ((:groups path) path))
@@ -113,10 +111,6 @@
     ((:current-state path) path))
   (current-state-seq [path]
     ((:current-state-seq path) path))
-  (prev-step-groups [path]
-    ((:prev-step-groups path) path))
-  (reusable-groups [path]
-    ((:reusable-groups path) path))
   (max-estimation [path]
     ((:max-estimation path) path))
   (min-estimation [path]
@@ -139,50 +133,18 @@
 
 (defn lazy-cached-path [table prev-path last-action]
   (if prev-path
-    (let [groups-fn (memoize (fn [self]
-                               (let [state (current-state self)
-                                     all-points (points state)
-                                     reused (reusable-groups self)
-                                     saw (set (seq-from-matrix reused))
-                                     next-point (first (filter (complement saw) all-points))]
-                                 (concat reused (group table state all-points next-point saw)))))
+    (let [groups-fn (memoize (fn [self] (group table (current-state self))))
           actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
           total-score-fn (memoize (fn [self] (reduce + (map (comp score count) (actions self)))))
           current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))
-          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))
-          prev-step-groups-fn (memoize (fn [self] (groups prev-path)))
-          reusable-groups-fn
-          (memoize
-            (fn [self]
-              (let [direct-low-points (low-points last-action)
-                    all-low-points (conj (mapv #(update-in % [1] dec) direct-low-points)
-                                     (update-in (apply min-key first direct-low-points) [0] dec)
-                                     (update-in (apply max-key first direct-low-points) [0] inc))
-                    prev-step-state (current-state prev-path)
-                    zero-y-points (sort-by first > (filter (comp (partial = 0) second) direct-low-points))]
-                (reduce
-                  #(map (comp set
-                          (partial map
-                            (fn [point] (if (> (first point) (first %2))
-                                          (update-in point [0] dec)
-                                          point)))) %1)
-                  (filter
-                    (partial not-any?
-                      #(some
-                         (fn [low] (and (= (first low) (first %)) (<= (second low) (second %))))
-                         all-low-points))
-                    (prev-step-groups self)) (filter #(= (count (prev-step-state (first %)))
-                                                        (count (filter (comp (partial = (first %)) first) last-action)))
-                                               zero-y-points)))))]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))
+          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))]
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))
     (let [groups-fn (memoize (fn [self] (group table (current-state self))))
           actions-fn (fn [_] [])
           total-score-fn (fn [_] 0)
           current-state-fn (memoize (comp init-state :table ))
-          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))
-          prev-step-groups-fn (fn [_] nil)
-          reusable-groups-fn (fn [_] nil)]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))))
+          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))]
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
