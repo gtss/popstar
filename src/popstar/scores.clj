@@ -4,9 +4,11 @@
 (defn mp ([x] (do (prn x) x))
   ([x pred] (do (when (pred x) (prn x)) x)))
 
-(defn score [n] (* 5M n n))
+(def score (vec (for [n (range 101)] (* 5 n n))))
 
-(defn bonus [n] (max 0 (- 2000 (* n n 20))))
+(def bonus-vec (vec (for [n (range 10)] (- 2000 (* 20 n n)))))
+
+(defn bonus [n] (if (>= n 10) 0 (bonus-vec n)))
 
 (def colors #{:b :g :p :r :y })
 
@@ -42,8 +44,6 @@
                                 [ix vy]))]
     (vec (for [vx (range x)]
            (vec (inner-seq vx (count (nth table vx))))))))
-
-(def init-state (memoize init-state))
 
 (defn points [state]
   (when (not-empty state)
@@ -178,7 +178,7 @@
     (let [groups-fn (memoize (fn [self] (group table (current-state self))))
           actions-fn (fn [_] [])
           total-score-fn (fn [_] 0)
-          current-state-fn (comp init-state :table )
+          current-state-fn (memoize (comp init-state :table ))
           current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))
           prev-step-groups-fn (fn [_] nil)
           reusable-groups-fn (fn [_] nil)]
