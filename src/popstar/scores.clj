@@ -98,11 +98,10 @@
   (current-state-seq [path])
   (prev-step-groups [path])
   (reusable-groups [path])
-  (rate [path])
   (max-estimation [path])
   (min-estimation [path]))
 
-(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq prev-step-groups reusable-groups rate max-estimation min-estimation]
+(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq prev-step-groups reusable-groups max-estimation min-estimation]
   State
   (groups [path]
     ((:groups path) path))
@@ -118,8 +117,6 @@
     ((:prev-step-groups path) path))
   (reusable-groups [path]
     ((:reusable-groups path) path))
-  (rate [path]
-    ((:rate path) path))
   (max-estimation [path]
     ((:max-estimation path) path))
   (min-estimation [path]
@@ -133,13 +130,12 @@
   (let [gs (vals (group-by (partial get-color (:table path)) (current-state-seq path)))
         tmp (reduce #(if (= 1 (count %2)) (update-in %1 [1] inc) (update-in %1 [0] (partial + (score (count %2))))) [0 0] gs)]
     (+ (total-score path) (tmp 0) (bonus (tmp 1)))))
+
 (defn simple-min-estimation [path]
   (let [gs (groups path)
         all-n (count (current-state-seq path))
         parts (+ (count gs) (- all-n (count (seq-from-matrix gs))))]
     (apply + (total-score path) (bonus (- parts (count gs))) (map (comp score count) gs))))
-
-(def path-rate #(let [all-n (count (seq-from-matrix (current-state %))) parts (+ (count (groups %)) (- all-n (count (seq-from-matrix (groups %)))))] (if (= 0 all-n) 0 (/ parts all-n))))
 
 (defn lazy-cached-path [table prev-path last-action]
   (if prev-path
@@ -178,16 +174,15 @@
                     (prev-step-groups self)) (filter #(= (count (prev-step-state (first %)))
                                                         (count (filter (comp (partial = (first %)) first) last-action)))
                                                zero-y-points)))))]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate) (memoize simple-max-estimation) (memoize simple-min-estimation)))
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))
     (let [groups-fn (memoize (fn [self] (group table (current-state self))))
           actions-fn (fn [_] [])
           total-score-fn (fn [_] 0)
           current-state-fn (comp init-state :table )
           current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))
           prev-step-groups-fn (fn [_] nil)
-          reusable-groups-fn (fn [_] nil)
-          ]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize path-rate) (memoize simple-max-estimation) (memoize simple-min-estimation)))))
+          reusable-groups-fn (fn [_] nil)]
+      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn prev-step-groups-fn reusable-groups-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
