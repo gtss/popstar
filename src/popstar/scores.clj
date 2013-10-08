@@ -47,7 +47,7 @@
 
 (defn points [state]
   (when (not-empty state)
-    (loop [current [0 0] result []]
+    (loop [current [0 0] result #{}]
       (cond
         (and (nil? (get-in state current)) (= 0 (second current))) result
         (nil? (get-in state current)) (recur [(inc (first current)) 0] result)
@@ -72,16 +72,16 @@
     (group table state (points state)))
   ([table state all-points]
     (when (not-empty state)
-      (group table state all-points [0 0] #{})))
-  ([table state all-points current saw]
+      (group table state all-points [0 0])))
+  ([table state all-points current]
     (when current
       (lazy-seq
         (let [same-points (same table state current)
-              new-saw (clojure.set/union saw same-points)
-              next-point (first (filter (complement new-saw) all-points))]
+              new-points (clojure.set/difference all-points same-points)
+              next-point (first new-points)]
           (if (= #{current} same-points)
-            (group table state all-points next-point new-saw)
-            (cons same-points (group table state all-points next-point new-saw))))))))
+            (group table state new-points next-point)
+            (cons same-points (group table state new-points next-point))))))))
 
 (def end? (comp boolean not-empty group))
 
