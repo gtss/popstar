@@ -38,20 +38,18 @@
             (recur (apply conj temp matched) (apply conj result matched))))
         result))))
 
-(defn init-state [table]
-  (let [x (count table)
+(defn matrix [src inner-fn outer-fn]
+  (let [x (count src)
         inner-seq (fn [ix iy] (for [vy (range iy)]
                                 [ix vy]))]
-    (vec (for [vx (range x)]
-           (vec (inner-seq vx (count (nth table vx))))))))
+    (outer-fn (for [vx (range x)]
+                (inner-fn (inner-seq vx (count (nth src vx))))))))
+
+(defn init-state [table]
+  (matrix table vec vec))
 
 (defn points [state]
-  (when (not-empty state)
-    (loop [current [0 0] result #{}]
-      (cond
-        (and (nil? (get-in state current)) (= 0 (second current))) result
-        (nil? (get-in state current)) (recur [(inc (first current)) 0] result)
-        :else (recur (update-in current [1] inc) (conj result current))))))
+  (matrix state set (partial apply clojure.set/union)))
 
 (def seq-from-matrix (partial apply concat))
 
@@ -67,7 +65,7 @@
 (defn group
   ([table]
     (let [state (init-state table)]
-      (group table state state)))
+      (group table state)))
   ([table state]
     (group table state (points state)))
   ([table state all-points]
