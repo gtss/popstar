@@ -48,19 +48,27 @@
 (defn init-state [table]
   (matrix table vec vec))
 
+(def set-from-matrix (partial apply clojure.set/union))
+
 (defn points [state]
-  (matrix state set (partial apply clojure.set/union)))
+  (matrix state set set-from-matrix))
 
 (def seq-from-matrix (partial apply concat))
+
+(def group-by-first (partial group-by first))
 
 (defn choose-points-fn-maker [choose-fn]
   (comp
     (partial reduce #(conj %1 (choose-fn (second %2))) [])
-    (partial group-by first)))
+    group-by-first))
 
-(def high-points (choose-points-fn-maker (partial apply max-key second)))
+(def partial-apply-max-key-second (partial apply max-key second))
 
-(def low-points (choose-points-fn-maker (partial apply min-key second)))
+(def high-points (choose-points-fn-maker partial-apply-max-key-second))
+
+(def partial-apply-min-key-second (partial apply min-key second))
+
+(def low-points (choose-points-fn-maker partial-apply-min-key-second))
 
 (defn group
   ([table]
@@ -83,10 +91,14 @@
 
 (def end? (comp boolean not-empty group))
 
+(def partial-filterv-complement-nil? (partial filterv (complement nil?)))
+
+(def assoc-in-nil #(assoc-in %1 %2 nil))
+
 (defn eliminate [state agroup]
   (filterv not-empty
-    (mapv (partial filterv (complement nil?))
-      (reduce #(assoc-in %1 %2 nil) state agroup))))
+    (mapv partial-filterv-complement-nil?
+      (reduce assoc-in-nil state agroup))))
 
 (defprotocol State
   (groups [path])
@@ -115,49 +127,79 @@
     ((:min-estimation path) path)))
 
 (defn end-score [path]
-  (+ (total-score path)
-    ((comp bonus count seq-from-matrix current-state) path)))
+  (+ (total-score path) (-> path current-state-seq count bonus)))
+
+(defn merge-info-to-vector-from-a-seq [vector-c2 aseq]
+  (let [n (count aseq)]
+    (if (= 1 n)
+      (update-in vector-c2 [1] inc)
+      (update-in vector-c2 [0] (partial + (score n))))))
 
 (defn simple-max-estimation [path]
   (let [gs (vals (group-by (partial get-color (:table path)) (current-state-seq path)))
-        tmp (reduce #(if (= 1 (count %2)) (update-in %1 [1] inc) (update-in %1 [0] (partial + (score (count %2))))) [0 0] gs)]
+        tmp (reduce merge-info-to-vector-from-a-seq [0 0] gs)]
     (+ (total-score path) (tmp 0) (bonus (tmp 1)))))
+
+(def comp-score-count (comp score count))
 
 (defn simple-min-estimation [path]
   (let [gs (groups path)
         all-n (count (current-state-seq path))
-        parts (+ (count gs) (- all-n (count (seq-from-matrix gs))))]
-    (apply + (total-score path) (bonus (- parts (count gs))) (map (comp score count) gs))))
+        cgs (count gs)
+        parts (+ cgs (- all-n (count (seq-from-matrix gs))))]
+    (apply + (total-score path) (bonus (- parts cgs)) (map comp-score-count gs))))
 
-(defn lazy-cached-path [table prev-path last-action]
-  (if prev-path
-    (let [groups-fn (memoize (fn [self] (group table (current-state self))))
-          actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
-          total-score-fn (memoize (fn [self] (reduce + (map (comp score count) (actions self)))))
-          current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))
-          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))
-    (let [groups-fn (memoize (fn [self] (group table (current-state self))))
-          actions-fn (fn [_] [])
-          total-score-fn (fn [_] 0)
-          current-state-fn (memoize (comp init-state :table ))
-          current-state-seq-fn (memoize (fn [self] (seq-from-matrix (current-state self))))]
-      (->LazyCachedPath table groups-fn actions-fn total-score-fn current-state-fn current-state-seq-fn (memoize simple-max-estimation) (memoize simple-min-estimation)))))
+(defn path-groups [path]
+  (group (:table path) (current-state path)))
+
+(defn path-total-score [path]
+  (reduce + (map comp-score-count (actions path))))
+
+(defn path-current-state-seq [path]
+  (seq-from-matrix (current-state path)))
+
+(defn empty-actions [_] [])
+
+(defn zero-score [_] 0)
+
+(defn path-init-state [path]
+  (init-state (:table path)))
+
+(defn first-lazy-cached-path [table]
+  (->LazyCachedPath
+    table
+    (memoize path-groups)
+    empty-actions
+    zero-score
+    (memoize path-init-state)
+    (memoize path-current-state-seq)
+    (memoize simple-max-estimation)
+    (memoize simple-min-estimation)))
+
+(defn next-lazy-cached-path [prev-path last-action]
+  (let [actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
+        current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))]
+    (->LazyCachedPath
+      (:table prev-path)
+      (memoize path-groups)
+      actions-fn
+      (memoize path-total-score)
+      current-state-fn
+      (memoize path-current-state-seq)
+      (memoize simple-max-estimation)
+      (memoize simple-min-estimation))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
-(defn end-differ [path1 path2]
-  (let [state1 (current-state path1) state2 (current-state path2)]
-    (if (= state1 state2)
-      (condp = (compare (total-score path1) (total-score path2))
-        1 :gt ;
-        -1 :lt ;
-        0 :eq ;
-        :nc )
-      :nc )))
+(defn score-differ [path1 path2]
+  (condp = (compare (total-score path1) (total-score path2))
+    1 :gt ;
+    -1 :lt ;
+    0 :eq ;
+    :nc ))
 
 (defn diff ([path1 path2]
-             (diff path1 path2 :nc end-differ))
+             (diff path1 path2 :nc score-differ))
   ([path1 path2 default-value & preds]
     (cond
       (and (nil? path1) (nil? path2)) :eq ;
@@ -171,27 +213,29 @@
                     result))
                 default-value)))))
 
+(def path-comparator #(if (= %1 %2)
+                        0
+                        (let [me1 (min-estimation %1)
+                              me2 (min-estimation %2)]
+                          (cond
+                            (> (- me1) (- me2)) 1
+                            (< (- me1) (- me2)) -1
+                            :else (let [ts1 (total-score %1)
+                                        ts2 (total-score %2)]
+                                    (cond
+                                      (< ts1 ts2) 1
+                                      (> ts1 ts2) -1
+                                      :else (let [cg1 (count (groups %1))
+                                                  cg2 (count (groups %2))]
+                                              (if (> cg1 cg2) 1
+                                                -1))))))))
+
 (defn popstars [table]
-  (loop [available (sorted-set-by #(if (= %1 %2)
-                                     0
-                                     (let [me1 (min-estimation %1)
-                                           me2 (min-estimation %2)]
-                                       (cond
-                                         (> (- me1) (- me2)) 1
-                                         (< (- me1) (- me2)) -1
-                                         :else (let [ts1 (total-score %1)
-                                                     ts2 (total-score %2)]
-                                                 (cond
-                                                   (< ts1 ts2) 1
-                                                   (> ts1 ts2) -1
-                                                   :else (let [cg1 (count (groups %1))
-                                                               cg2 (count (groups %2))]
-                                                           (if (> cg1 cg2) 1
-                                                             -1))))))) (lazy-cached-path table nil nil))
+  (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
          saw {} estimation 0 wanted []]
     (if-let [head (first available)]
       (if-let [head-groups (not-empty (groups head))]
-        (let [paths (map #(lazy-cached-path table head %) head-groups)
+        (let [paths (map #(next-lazy-cached-path head %) head-groups)
               new-saw (loop [init paths result-map {}]
                         (if (empty? init)
                           result-map
