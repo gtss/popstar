@@ -38,20 +38,23 @@
             (recur (apply conj temp matched) (apply conj result matched))))
         result))))
 
-(defn matrix [src inner-fn outer-fn]
-  (let [x (count src)
-        inner-seq (fn [ix iy] (for [vy (range iy)]
-                                [ix vy]))]
-    (outer-fn (for [vx (range x)]
-                (inner-fn (inner-seq vx (count (nth src vx))))))))
+(defn inner-seq [ix iy]
+  (for [vy (range iy)]
+    [ix vy]))
+
+(defn matrix [count-vec inner-fn outer-fn]
+  (outer-fn (for [vx (range (count count-vec))]
+              (inner-fn (inner-seq vx (count-vec vx))))))
+
+(def ^:dynamic dynamic-matrix matrix)
 
 (defn init-state [table]
-  (matrix table vec vec))
+  (dynamic-matrix (mapv count table) vec vec))
 
 (def set-from-matrix (partial apply clojure.set/union))
 
 (defn points [state]
-  (matrix state set set-from-matrix))
+  (dynamic-matrix (mapv count state) set set-from-matrix))
 
 (def seq-from-matrix (partial apply concat))
 
@@ -231,33 +234,34 @@
                                                 -1))))))))
 
 (defn popstars [table]
-  (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
-         saw {} estimation 0 wanted []]
-    (if-let [head (first available)]
-      (if-let [head-groups (not-empty (groups head))]
-        (let [paths (map #(next-lazy-cached-path head %) head-groups)
-              new-saw (loop [init paths result-map {}]
-                        (if (empty? init)
-                          result-map
-                          (let [path (first init)
-                                state (current-state path)
-                                difference (cond
-                                             (contains? result-map state) (diff path (result-map state))
-                                             (contains? saw state) (diff path (saw state))
-                                             (> estimation (max-estimation head)) :lt ;
-                                             :else :nc )]
-                            (if (contains? #{:gt :nc } difference)
-                              (recur (rest init) (conj result-map [state path]))
-                              (recur (rest init) result-map)))))
-              new-estimation (max estimation (min-estimation head))]
-          (if (empty? new-saw)
-            (recur (disj available head) saw new-estimation wanted)
-            (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) new-estimation wanted)))
-        (let [score (end-score head)]
-          (cond (empty? wanted) (recur (disj available head) saw (max estimation score) [head score])
-            (> score (wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
-            :else (recur (disj available head) saw estimation wanted))))
-      wanted)))
+  (binding [dynamic-matrix (memoize matrix)]
+    (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
+           saw {} estimation 0 wanted []]
+      (if-let [head (first available)]
+        (if-let [head-groups (not-empty (groups head))]
+          (let [paths (map #(next-lazy-cached-path head %) head-groups)
+                new-saw (loop [init paths result-map {}]
+                          (if (empty? init)
+                            result-map
+                            (let [path (first init)
+                                  state (current-state path)
+                                  difference (cond
+                                               (contains? result-map state) (diff path (result-map state))
+                                               (contains? saw state) (diff path (saw state))
+                                               (> estimation (max-estimation head)) :lt ;
+                                               :else :nc )]
+                              (if (contains? #{:gt :nc } difference)
+                                (recur (rest init) (conj result-map [state path]))
+                                (recur (rest init) result-map)))))
+                new-estimation (max estimation (min-estimation head))]
+            (if (empty? new-saw)
+              (recur (disj available head) saw new-estimation wanted)
+              (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) new-estimation wanted)))
+          (let [score (end-score head)]
+            (cond (empty? wanted) (recur (disj available head) saw (max estimation score) [head score])
+              (> score (wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
+              :else (recur (disj available head) saw estimation wanted))))
+        wanted))))
 
 (defn rand-color []
   (rand-nth (vec colors)))
