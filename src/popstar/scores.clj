@@ -26,18 +26,6 @@
   ([table state]
     (get-in table state)))
 
-(defn same [table state point]
-  (when-let [color (get-color table state point)]
-    (loop [temp #{point} result #{point}]
-      (if-let [current (first temp)]
-        (let [neighbors (for [i [0 1] f [inc dec]]
-                          (update-in current [i] f))
-              matched (filter #(and (= color (get-color table state %)) (not (contains? result %))) neighbors)]
-          (if (empty? matched)
-            (recur (disj temp current) result)
-            (recur (apply conj temp matched) (apply conj result matched))))
-        result))))
-
 (defn inner-seq [ix iy]
   (for [vy (range iy)]
     [ix vy]))
@@ -51,48 +39,49 @@
 (defn init-state [table]
   (dynamic-matrix (mapv count table) vec vec))
 
-(def set-from-matrix (partial apply clojure.set/union))
-
-(defn points [state]
-  (dynamic-matrix (mapv count state) set set-from-matrix))
-
 (def seq-from-matrix (partial apply concat))
 
-(def group-by-first (partial group-by first))
-
-(defn choose-points-fn-maker [choose-fn]
-  (comp
-    (partial reduce #(conj %1 (choose-fn (second %2))) [])
-    group-by-first))
-
-(def partial-apply-max-key-second (partial apply max-key second))
-
-(def high-points (choose-points-fn-maker partial-apply-max-key-second))
-
-(def partial-apply-min-key-second (partial apply min-key second))
-
-(def low-points (choose-points-fn-maker partial-apply-min-key-second))
-
-(defn group
+(defn line-group
   ([table]
     (let [state (init-state table)]
-      (group table state)))
+      (line-group table state)))
   ([table state]
-    (group table state (points state)))
-  ([table state all-points]
-    (when (not-empty state)
-      (group table state all-points [0 0])))
-  ([table state all-points current]
-    (when current
-      (lazy-seq
-        (let [same-points (same table state current)
-              new-points (clojure.set/difference all-points same-points)
-              next-point (first new-points)]
-          (if (= #{current} same-points)
-            (group table state new-points next-point)
-            (cons same-points (group table state new-points next-point))))))))
+    (line-group table state (init-state state)))
+  ([table state points-matrix]
+    (reduce #(apply line-group table state %2 %1) [{} {}] points-matrix))
+  ([table state some-points map-pi map-ii]
+    (loop [i (inc (apply max 0 (vals map-pi))) sp some-points mpi map-pi mii map-ii]
+      (if-let [head (first sp)]
+        (let [x0 (= 0 (head 0)) y0 (= 0 (head 1))]
+          (cond
+            (and (not x0) (not y0)) (let [p1 (update-in head [1] dec)
+                                          p2 (update-in head [0] dec)
+                                          hc (get-color table state head)
+                                          p1c (get-color table state p1)
+                                          p2c (get-color table state p2)]
+                                      (cond
+                                        (= hc p1c p2c) (let [p1i (mpi p1)
+                                                             p2i (mpi p2)
+                                                             mini (min (mii p1i) (mii p2i))]
+                                                         (recur i (rest sp) (conj mpi [head (mpi p1)]) (conj mii [p1i mini] [p2i mini])))
+                                        (= hc p1c) (recur i (rest sp) (conj mpi [head (mpi p1)]) mii)
+                                        (= hc p2c) (recur i (rest sp) (conj mpi [head (mpi p2)]) mii)
+                                        :else (recur (inc i) (rest sp) (conj mpi [head i]) (conj mii [i i]))))
+            (and x0 y0) (recur (inc i) (rest sp) (conj mpi [head i]) (conj mii [i i]))
+            :else (let [p (if x0 (update-in head [1] dec) (update-in head [0] dec))
+                        hc (get-color table state head)
+                        pc (get-color table state p)]
+                    (if (= hc pc)
+                      (recur i (rest sp) (conj mpi [head (mpi p)]) mii)
+                      (recur (inc i) (rest sp) (conj mpi [head i]) (conj mii [i i]))))))
+        [mpi mii]))))
 
-(def end? (comp boolean not-empty group))
+(def count-pred (comp (partial < 1) count))
+
+(defn group-from-line-group [[mpi mii]]
+  (filter count-pred (vals (group-by (comp mii mpi) (keys mpi)))))
+
+(def group (comp group-from-line-group line-group))
 
 (def partial-filterv-complement-nil? (partial filterv (complement nil?)))
 
