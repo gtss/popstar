@@ -8,7 +8,7 @@
 
 (def bonus-vec (vec (for [n (range 10)] (- 2000 (* 20 n n)))))
 
-(defn bonus [n] (if (>= n 10) 0 (bonus-vec n)))
+(defn bonus [n] (if (>= n 10) 0 (nth bonus-vec n)))
 
 (def colors #{:b :g :p :r :y })
 
@@ -50,30 +50,28 @@
   ([table state points-matrix]
     (reduce #(apply line-group table state %2 %1) [{} {}] points-matrix))
   ([table state some-points map-pi map-ii]
-    (loop [i (inc (apply max 0 (vals map-pi))) sp some-points mpi map-pi mii map-ii]
-      (if-let [head (first sp)]
-        (let [x0 (= 0 (head 0)) y0 (= 0 (head 1))]
+    (loop [i (inc (apply max 0 (vals map-pi))) j 0 lastp nil lastc nil lasti 0 mpi map-pi mii map-ii]
+      (if-let [head (nth some-points j nil)]
+        (let [x0 (= 0 (nth head 0)) y0 (= 0 (nth head 1)) hc (get-color table state head) j1 (inc j)]
           (cond
-            (and (not x0) (not y0)) (let [p1 (update-in head [1] dec)
-                                          p2 (update-in head [0] dec)
-                                          hc (get-color table state head)
-                                          p1c (get-color table state p1)
+            (and (not x0) (not y0)) (let [p2 (update-in head [0] dec)
                                           p2c (get-color table state p2)]
                                       (cond
-                                        (= hc p1c p2c) (let [p1i (mpi p1)
-                                                             p2i (mpi p2)
-                                                             mini (min (mii p1i) (mii p2i))]
-                                                         (recur i (rest sp) (conj mpi [head (mpi p1)]) (conj mii [p1i mini] [p2i mini])))
-                                        (= hc p1c) (recur i (rest sp) (conj mpi [head (mpi p1)]) mii)
-                                        (= hc p2c) (recur i (rest sp) (conj mpi [head (mpi p2)]) mii)
-                                        :else (recur (inc i) (rest sp) (conj mpi [head i]) (conj mii [i i]))))
-            (and x0 y0) (recur (inc i) (rest sp) (conj mpi [head i]) (conj mii [i i]))
-            :else (let [p (if x0 (update-in head [1] dec) (update-in head [0] dec))
-                        hc (get-color table state head)
-                        pc (get-color table state p)]
-                    (if (= hc pc)
-                      (recur i (rest sp) (conj mpi [head (mpi p)]) mii)
-                      (recur (inc i) (rest sp) (conj mpi [head i]) (conj mii [i i]))))))
+                                        (= hc lastc p2c) (let [p2i (mpi p2)
+                                                               mini (min (mii lasti) (mii p2i))]
+                                                           (recur i j1 head hc lasti (conj mpi [head lasti]) (conj mii [lasti mini] [p2i mini])))
+                                        (= hc lastc) (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
+                                        (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc p2i (conj mpi [head p2i]) mii))
+                                        :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+            (and x0 (not y0)) (if (= hc lastc)
+                                (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
+                                (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i])))
+            (and (not x0) y0) (let [p (update-in head [0] dec)
+                                    pc (get-color table state p)]
+                                (if (= hc pc)
+                                  (let [pi (mpi p)] (recur i j1 head hc pi (conj mpi [head pi]) mii))
+                                  (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+            :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
         [mpi mii]))))
 
 (def count-pred (comp (partial < 1) count))
@@ -82,6 +80,8 @@
   (filter count-pred (vals (group-by (comp mii mpi) (keys mpi)))))
 
 (def group (comp group-from-line-group line-group))
+
+(def ^:dynamic dynamic-group group)
 
 (def partial-filterv-complement-nil? (partial filterv (complement nil?)))
 
@@ -92,7 +92,7 @@
     (mapv partial-filterv-complement-nil?
       (reduce assoc-in-nil state agroup))))
 
-(defprotocol State
+(defprotocol Path
   (groups [path])
   (actions [path])
   (total-score [path])
@@ -102,7 +102,7 @@
   (min-estimation [path]))
 
 (defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq max-estimation min-estimation]
-  State
+  Path
   (groups [path]
     ((:groups path) path))
   (actions [path]
@@ -130,7 +130,7 @@
 (defn simple-max-estimation [path]
   (let [gs (vals (group-by (partial get-color (:table path)) (current-state-seq path)))
         tmp (reduce merge-info-to-vector-from-a-seq [0 0] gs)]
-    (+ (total-score path) (tmp 0) (bonus (tmp 1)))))
+    (+ (total-score path) (nth tmp 0) (bonus (nth tmp 1)))))
 
 (def comp-score-count (comp score count))
 
@@ -142,7 +142,7 @@
     (apply + (total-score path) (bonus (- parts cgs)) (map comp-score-count gs))))
 
 (defn path-groups [path]
-  (group (:table path) (current-state path)))
+  (dynamic-group (:table path) (current-state path)))
 
 (defn path-total-score [path]
   (reduce + (map comp-score-count (actions path))))
@@ -223,25 +223,23 @@
                                                 -1))))))))
 
 (defn popstars [table]
-  (binding [dynamic-matrix (memoize matrix)]
+  (binding [dynamic-matrix (memoize matrix) dynamic-group (memoize group)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
            saw {} estimation 0 wanted []]
       (if-let [head (first available)]
         (if-let [head-groups (not-empty (groups head))]
           (let [paths (map #(next-lazy-cached-path head %) head-groups)
-                new-saw (loop [init paths result-map {}]
-                          (if (empty? init)
-                            result-map
-                            (let [path (first init)
-                                  state (current-state path)
+                new-saw (reduce
+                          (fn [result-map path]
+                            (let [state (current-state path)
                                   difference (cond
                                                (contains? result-map state) (diff path (result-map state))
                                                (contains? saw state) (diff path (saw state))
                                                (> estimation (max-estimation head)) :lt ;
                                                :else :nc )]
                               (if (contains? #{:gt :nc } difference)
-                                (recur (rest init) (conj result-map [state path]))
-                                (recur (rest init) result-map)))))
+                                (conj result-map [state path])
+                                result-map))) {} paths)
                 new-estimation (max estimation (min-estimation head))]
             (if (empty? new-saw)
               (recur (disj available head) saw new-estimation wanted)
