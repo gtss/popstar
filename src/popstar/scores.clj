@@ -41,31 +41,6 @@
 
 (def seq-from-matrix (partial apply concat))
 
-(defn one-line-group [table state some-points map-pi map-ii]
-  (loop [i (inc (apply max 0 (vals map-pi))) j 0 lastp nil lastc nil lasti 0 mpi map-pi mii map-ii]
-    (if-let [head (nth some-points j nil)]
-      (let [x0 (= 0 (nth head 0)) y0 (= 0 (nth head 1)) hc (get-color table state head) j1 (inc j)]
-        (cond
-          (and (not x0) (not y0)) (let [p2 (update-in head [0] dec)
-                                        p2c (get-color table state p2)]
-                                    (cond
-                                      (= hc lastc p2c) (let [p2i (mpi p2)
-                                                             mini (min (mii lasti) (mii p2i))]
-                                                         (recur i j1 head hc lasti (conj mpi [head lasti]) (conj mii [lasti mini] [p2i mini])))
-                                      (= hc lastc) (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
-                                      (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc p2i (conj mpi [head p2i]) mii))
-                                      :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
-          (and x0 (not y0)) (if (= hc lastc)
-                              (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
-                              (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i])))
-          (and (not x0) y0) (let [p (update-in head [0] dec)
-                                  pc (get-color table state p)]
-                              (if (= hc pc)
-                                (let [pi (mpi p)] (recur i j1 head hc pi (conj mpi [head pi]) mii))
-                                (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
-          :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
-      [mpi mii])))
-
 (defn line-group
   ([table]
     (let [state (init-state table)]
@@ -73,7 +48,31 @@
   ([table state]
     (line-group table state (init-state state)))
   ([table state points-matrix]
-    (reduce #(apply one-line-group table state %2 %1) [{} {}] points-matrix)))
+    (reduce #(apply line-group table state %2 %1) [{} {}] points-matrix))
+  ([table state some-points map-pi map-ii]
+    (loop [i (inc (apply max 0 (vals map-pi))) j 0 lastp nil lastc nil lasti 0 mpi map-pi mii map-ii]
+      (if-let [head (nth some-points j nil)]
+        (let [x0 (= 0 (nth head 0)) y0 (= 0 (nth head 1)) hc (get-color table state head) j1 (inc j)]
+          (cond
+            (and (not x0) (not y0)) (let [p2 (update-in head [0] dec)
+                                          p2c (get-color table state p2)]
+                                      (cond
+                                        (= hc lastc p2c) (let [p2i (mpi p2)
+                                                               mini (min (mii lasti) (mii p2i))]
+                                                           (recur i j1 head hc lasti (conj mpi [head lasti]) (conj mii [lasti mini] [p2i mini])))
+                                        (= hc lastc) (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
+                                        (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc p2i (conj mpi [head p2i]) mii))
+                                        :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+            (and x0 (not y0)) (if (= hc lastc)
+                                (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
+                                (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i])))
+            (and (not x0) y0) (let [p (update-in head [0] dec)
+                                    pc (get-color table state p)]
+                                (if (= hc pc)
+                                  (let [pi (mpi p)] (recur i j1 head hc pi (conj mpi [head pi]) mii))
+                                  (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+            :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+        [mpi mii]))))
 
 (def count-pred (comp (partial < 1) count))
 
