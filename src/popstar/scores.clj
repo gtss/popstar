@@ -32,14 +32,18 @@
 
 (defn matrix [count-vec inner-fn outer-fn]
   (outer-fn (for [vx (range (count count-vec))]
-              (inner-fn (inner-seq vx (count-vec vx))))))
+              (inner-fn (inner-seq vx (nth count-vec vx))))))
 
 (def ^:dynamic dynamic-matrix matrix)
 
 (defn init-state [table]
   (dynamic-matrix (mapv count table) vec vec))
 
-(def seq-from-matrix (partial apply concat))
+(def map-count (partial map count))
+
+(def +seq (partial apply +))
+
+(def count-matrix (comp +seq map-count))
 
 (defn line-group
   ([table]
@@ -97,11 +101,10 @@
   (actions [path])
   (total-score [path])
   (current-state [path])
-  (current-state-seq [path])
   (max-estimation [path])
   (min-estimation [path]))
 
-(defrecord LazyCachedPath [table groups actions total-score current-state current-state-seq max-estimation min-estimation]
+(defrecord LazyCachedPath [table groups actions total-score current-state max-estimation min-estimation]
   Path
   (groups [path]
     ((:groups path) path))
@@ -111,15 +114,13 @@
     ((:total-score path) path))
   (current-state [path]
     ((:current-state path) path))
-  (current-state-seq [path]
-    ((:current-state-seq path) path))
   (max-estimation [path]
     ((:max-estimation path) path))
   (min-estimation [path]
     ((:min-estimation path) path)))
 
 (defn end-score [path]
-  (+ (total-score path) (-> path current-state-seq count bonus)))
+  (+ (total-score path) (-> path current-state count-matrix bonus)))
 
 (defn merge-info-to-vector-from-a-seq [vector-c2 aseq]
   (let [n (count aseq)]
@@ -128,7 +129,8 @@
       (update-in vector-c2 [0] (partial + (score n))))))
 
 (defn simple-max-estimation [path]
-  (let [gs (vals (group-by (partial get-color (:table path)) (current-state-seq path)))
+  (let [gs (vals (apply merge-with concat
+                   (map (partial group-by (partial get-color (:table path))) (current-state path))))
         tmp (reduce merge-info-to-vector-from-a-seq [0 0] gs)]
     (+ (total-score path) (nth tmp 0) (bonus (nth tmp 1)))))
 
@@ -136,9 +138,9 @@
 
 (defn simple-min-estimation [path]
   (let [gs (groups path)
-        all-n (count (current-state-seq path))
+        all-n (count-matrix (current-state path))
         cgs (count gs)
-        parts (+ cgs (- all-n (count (seq-from-matrix gs))))]
+        parts (+ cgs (- all-n (count-matrix gs)))]
     (apply + (total-score path) (bonus (- parts cgs)) (map comp-score-count gs))))
 
 (defn path-groups [path]
@@ -146,9 +148,6 @@
 
 (defn path-total-score [path]
   (reduce + (map comp-score-count (actions path))))
-
-(defn path-current-state-seq [path]
-  (seq-from-matrix (current-state path)))
 
 (defn empty-actions [_] [])
 
@@ -164,7 +163,6 @@
     empty-actions
     zero-score
     (memoize path-init-state)
-    (memoize path-current-state-seq)
     (memoize simple-max-estimation)
     (memoize simple-min-estimation)))
 
@@ -177,7 +175,6 @@
       actions-fn
       (memoize path-total-score)
       current-state-fn
-      (memoize path-current-state-seq)
       (memoize simple-max-estimation)
       (memoize simple-min-estimation))))
 
