@@ -65,17 +65,17 @@
                                                                mini (min (mii lasti) (mii p2i))]
                                                            (recur i j1 head hc lasti (conj mpi [head lasti]) (conj mii [lasti mini] [p2i mini])))
                                         (= hc lastc) (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
-                                        (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc p2i (conj mpi [head p2i]) mii))
-                                        :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+                                        (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc (long p2i) (conj mpi [head p2i]) mii))
+                                        :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i]))))
             (and x0 (not y0)) (if (= hc lastc)
                                 (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
-                                (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i])))
+                                (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i])))
             (and (not x0) y0) (let [p (update-in head [0] dec)
                                     pc (get-color table state p)]
                                 (if (= hc pc)
-                                  (let [pi (mpi p)] (recur i j1 head hc pi (conj mpi [head pi]) mii))
-                                  (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
-            :else (recur (inc i) j1 head hc i (conj mpi [head i]) (conj mii [i i]))))
+                                  (let [pi (mpi p)] (recur i j1 head hc (long pi) (conj mpi [head pi]) mii))
+                                  (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i]))))
+            :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i]))))
         [mpi mii]))))
 
 (def count-pred (comp (partial < 1) count))
@@ -99,10 +99,10 @@
 (defprotocol Path
   (groups [path])
   (actions [path])
-  (total-score [path])
+  (^long total-score [path])
   (current-state [path])
   (max-estimation [path])
-  (min-estimation [path]))
+  (^long min-estimation [path]))
 
 (defrecord LazyCachedPath [table groups actions total-score current-state max-estimation min-estimation]
   Path
@@ -119,8 +119,9 @@
   (min-estimation [path]
     ((:min-estimation path) path)))
 
-(defn end-score [path]
-  (+ (total-score path) (-> path current-state count-matrix bonus)))
+(defn end-score
+  (^long [path]
+    (+ (total-score path) (-> path current-state count-matrix bonus))))
 
 (defn merge-info-to-vector-from-a-seq [vector-c2 aseq]
   (let [n (count aseq)]
