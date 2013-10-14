@@ -4,7 +4,7 @@
 (defn mp ([x] (do (prn x) x))
   ([x pred] (do (when (pred x) (prn x)) x)))
 
-(def score (vec (for [n (range 101)] (* 5 n n))))
+(def score (vec (concat [0 0] (for [n (range 2 101)] (* 5 n n)))))
 
 (def bonus-vec (vec (for [n (range 10)] (- 2000 (* 20 n n)))))
 
@@ -139,16 +139,11 @@
 
 (defn simple-min-estimation [path]
   (let [gs (groups path)
-        all-n (count-matrix (current-state path))
-        cgs (count gs)
-        parts (+ cgs (- all-n (count-matrix gs)))]
-    (apply + (total-score path) (bonus (- parts cgs)) (map comp-score-count gs))))
+        all-n (count-matrix (current-state path))]
+    (apply + (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
 
 (defn path-groups [path]
   (dynamic-group (:table path) (current-state path)))
-
-(defn path-total-score [path]
-  (reduce + (map comp-score-count (actions path))))
 
 (defn empty-actions [_] [])
 
@@ -169,12 +164,13 @@
 
 (defn next-lazy-cached-path [prev-path last-action]
   (let [actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
+        path-total-score-fn (memoize (fn [_] (+ (total-score prev-path) (comp-score-count last-action))))
         current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))]
     (->LazyCachedPath
       (:table prev-path)
       (memoize path-groups)
       actions-fn
-      (memoize path-total-score)
+      path-total-score-fn
       current-state-fn
       (memoize simple-max-estimation)
       (memoize simple-min-estimation))))
