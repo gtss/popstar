@@ -26,18 +26,19 @@
   ([table state]
     (get-in table state)))
 
-(defn inner-seq [ix iy]
-  (for [vy (range iy)]
-    [ix vy]))
+(defn inner-vec [ix iy]
+  (mapv (partial vector ix) (range iy)))
 
-(defn matrix [count-vec inner-fn outer-fn]
-  (outer-fn (for [vx (range (count count-vec))]
-              (inner-fn (inner-seq vx (nth count-vec vx))))))
+(def cached-index-lines
+  (vec (for [x (range 10)]
+         (vec (for [length (range 1 11)]
+                (inner-vec x length))))))
 
-(def ^:dynamic dynamic-matrix matrix)
+(defn get-line [x aseq]
+  (get-in cached-index-lines [x (dec (count aseq))]))
 
-(defn init-state [table]
-  (dynamic-matrix (mapv count table) vec vec))
+(defn index-matrix [value-matrix]
+  (vec (map-indexed get-line value-matrix)))
 
 (def map-count (partial map count))
 
@@ -47,10 +48,10 @@
 
 (defn line-group
   ([table]
-    (let [state (init-state table)]
+    (let [state (index-matrix table)]
       (line-group table state)))
   ([table state]
-    (line-group table state (init-state state)))
+    (line-group table state (index-matrix state)))
   ([table state points-matrix]
     (reduce #(apply line-group table state %2 %1) [{} {}] points-matrix))
   ([table state some-points map-pi map-ii]
@@ -150,7 +151,7 @@
 (defn zero-score [_] 0)
 
 (defn path-init-state [path]
-  (init-state (:table path)))
+  (index-matrix (:table path)))
 
 (defn first-lazy-cached-path [table]
   (->LazyCachedPath
@@ -217,7 +218,7 @@
                                                 -1))))))))
 
 (defn popstars [table]
-  (binding [dynamic-matrix (memoize matrix) dynamic-group (memoize group)]
+  (binding [dynamic-group (memoize group)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
            saw {} estimation 0 wanted []]
       (if-let [head (first available)]
@@ -247,5 +248,5 @@
 (defn rand-color []
   (rand-nth (vec colors)))
 
-(defn rand-table [x y]
+(defn rand-table [x y] ;x, y <= 10
   (vec (for [a (range x)] (vec (for [b (range y)] (rand-color))))))
