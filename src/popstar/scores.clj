@@ -31,16 +31,14 @@
 
 (def cached-index-lines
   (vec (for [x (range 10)]
-         (vec (for [length (range 1 11)]
+         (vec (for [length (range 11)]
                 (inner-vec x length))))))
 
-(defn get-line [x aseq]
-  (get-in cached-index-lines [x (dec (count aseq))]))
-
-(defn index-matrix [value-matrix]
-  (vec (map-indexed get-line value-matrix)))
+(def get-line (comp (partial get-in cached-index-lines) vector))
 
 (def map-count (partial map count))
+
+(def index-matrix (comp vec (partial map-indexed get-line) map-count))
 
 (def +seq (partial apply +))
 
@@ -220,7 +218,7 @@
 (defn popstars [table]
   (binding [dynamic-group (memoize group)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
-           saw {} estimation 0 wanted []]
+           saw {} estimation 0 wanted nil]
       (if-let [head (first available)]
         (if-let [head-groups (not-empty (groups head))]
           (let [paths (map #(next-lazy-cached-path head %) head-groups)
@@ -241,7 +239,7 @@
               (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) new-estimation wanted)))
           (let [score (end-score head)]
             (cond (empty? wanted) (recur (disj available head) saw (max estimation score) [head score])
-              (> score (wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
+              (> score (nth wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
               :else (recur (disj available head) saw estimation wanted))))
         wanted))))
 
