@@ -51,16 +51,17 @@
   ([table state]
     (line-group table state (index-matrix state)))
   ([table state points-matrix]
-    (reduce #(apply line-group table state %2 %1) [{} {}] points-matrix))
-  ([table state some-points map-pi map-ii]
+    (reduce #(let [x (get-in %2 [0 0])] (apply line-group table (get state x) (get state (dec x)) %2 %1))
+      [{} {}] points-matrix))
+  ([table line-state last-line-state some-points map-pi map-ii]
     (loop [i (inc (apply max 0 (vals map-pi))) j 0 lastp nil lastc nil lasti 0 mpi map-pi mii map-ii]
       (if-let [head (get some-points j)]
-        (let [x0 (= 0 (nth head 0)) y0 (= 0 (nth head 1)) hc (get-color table state head) j1 (inc j)]
+        (let [x0 (= 0 (first head)) y0 (= 0 j) hc (get-color table (get line-state j)) j1 (inc j)]
           (cond
-            (and (not x0) (not y0)) (let [p2 (update-in head [0] dec)
-                                          p2c (get-color table state p2)]
+            (and (not x0) (not y0)) (let [p2c (get-color table (get last-line-state j))]
                                       (cond
-                                        (= hc lastc p2c) (let [p2i (mpi p2)
+                                        (= hc lastc p2c) (let [p2 (update-in head [0] dec)
+                                                               p2i (mpi p2)
                                                                lastii (get mii lasti lasti)
                                                                p2ii (get mii p2i p2i)
                                                                new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
@@ -68,15 +69,18 @@
                                                                          :else mii)]
                                                            (recur i j1 head hc lasti (conj mpi [head lasti]) new-mii))
                                         (= hc lastc) (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
-                                        (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc (long p2i) (conj mpi [head p2i]) mii))
+                                        (= hc p2c) (let [p2 (update-in head [0] dec)
+                                                         p2i (mpi p2)]
+                                                     (recur i j1 head hc (long p2i) (conj mpi [head p2i]) mii))
                                         :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii)))
             (and x0 (not y0)) (if (= hc lastc)
                                 (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
                                 (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii))
-            (and (not x0) y0) (let [p (update-in head [0] dec)
-                                    pc (get-color table state p)]
+            (and (not x0) y0) (let [pc (get-color table (get last-line-state j))]
                                 (if (= hc pc)
-                                  (let [pi (mpi p)] (recur i j1 head hc (long pi) (conj mpi [head pi]) mii))
+                                  (let [p (update-in head [0] dec)
+                                        pi (mpi p)]
+                                    (recur i j1 head hc (long pi) (conj mpi [head pi]) mii))
                                   (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii)))
             :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii)))
         [mpi mii]))))
