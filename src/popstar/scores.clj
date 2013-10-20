@@ -54,33 +54,37 @@
     (reduce #(apply line-group table state %2 %1) [{} {}] points-matrix))
   ([table state some-points map-pi map-ii]
     (loop [i (inc (apply max 0 (vals map-pi))) j 0 lastp nil lastc nil lasti 0 mpi map-pi mii map-ii]
-      (if-let [head (nth some-points j nil)]
+      (if-let [head (get some-points j)]
         (let [x0 (= 0 (nth head 0)) y0 (= 0 (nth head 1)) hc (get-color table state head) j1 (inc j)]
           (cond
             (and (not x0) (not y0)) (let [p2 (update-in head [0] dec)
                                           p2c (get-color table state p2)]
                                       (cond
                                         (= hc lastc p2c) (let [p2i (mpi p2)
-                                                               mini (min (mii lasti) (mii p2i))]
-                                                           (recur i j1 head hc lasti (conj mpi [head lasti]) (conj mii [lasti mini] [p2i mini])))
+                                                               lastii (get mii lasti lasti)
+                                                               p2ii (get mii p2i p2i)
+                                                               new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
+                                                                         (< lastii p2ii) (conj mii [p2i lastii])
+                                                                         :else mii)]
+                                                           (recur i j1 head hc lasti (conj mpi [head lasti]) new-mii))
                                         (= hc lastc) (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
                                         (= hc p2c) (let [p2i (mpi p2)] (recur i j1 head hc (long p2i) (conj mpi [head p2i]) mii))
-                                        :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i]))))
+                                        :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii)))
             (and x0 (not y0)) (if (= hc lastc)
                                 (recur i j1 head hc lasti (conj mpi [head lasti]) mii)
-                                (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i])))
+                                (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii))
             (and (not x0) y0) (let [p (update-in head [0] dec)
                                     pc (get-color table state p)]
                                 (if (= hc pc)
                                   (let [pi (mpi p)] (recur i j1 head hc (long pi) (conj mpi [head pi]) mii))
-                                  (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i]))))
-            :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) (conj mii [i i]))))
+                                  (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii)))
+            :else (recur (inc i) j1 head hc (long i) (conj mpi [head i]) mii)))
         [mpi mii]))))
 
 (def count-pred (comp (partial < 1) count))
 
 (defn group-from-line-group [[mpi mii]]
-  (filter count-pred (vals (group-by (comp mii mpi) (keys mpi)))))
+  (filter count-pred (vals (group-by #(let [i (mpi %)] (get mii i i)) (keys mpi)))))
 
 (def group (comp group-from-line-group line-group))
 
@@ -139,7 +143,7 @@
 (defn simple-min-estimation [path]
   (let [gs (groups path)
         all-n (count-matrix (current-state path))]
-    (apply + (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
+    (+seq (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
 
 (defn path-groups [path]
   (dynamic-group (:table path) (current-state path)))
