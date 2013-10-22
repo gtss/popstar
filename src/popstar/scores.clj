@@ -6,7 +6,9 @@
 
 (def score (vec (concat [0 0] (for [n (range 2 101)] (* 5 n n)))))
 
-(def bonus-vec (vec (for [n (range 10)] (- 2000 (* 20 n n)))))
+(def line-index (range 10))
+
+(def bonus-vec (vec (for [n line-index] (- 2000 (* 20 n n)))))
 
 (defn bonus [n] (if (>= n 10) 0 (nth bonus-vec n)))
 
@@ -49,71 +51,80 @@
 
 (def complement-nil? (complement nil?))
 
-(defn same-indexs [table line-state last-line-state]
-  (if (nil? last-line-state)
-      #{}
-    (set (filter complement-nil? (map #(when (= (get-color table %2) (get-color table %3)) %1)
-                                   (range) line-state last-line-state)))))
+(defn color-line [table line-state]
+  (mapv (partial get-color table) line-state))
+
+(def ^:dynamic dynamic-color-line color-line)
+
+(defn when= [l r v] (when (= l r) v))
+
+(defn same-indexs [line-state last-line-state]
+  (set (filter complement-nil? (map when= line-state last-line-state line-index))))
 
 (def ^:dynamic dynamic-same-indexs same-indexs)
 
-(defn one-line-group [table line-state same-ys x y]
-  (loop [i (* 10 x) j 0 lastc nil f identity]
+(defn same-color-line [cline]
+  (mapv = cline (cons nil cline)))
+
+(def ^:dynamic dynamic-same-color-line same-color-line)
+
+(defn one-line-group [line-state same-ys x y]
+  (loop [i (* 10 x) j 0 f identity]
     (if (= y j)
       (memoize f)
-      (let [head [x j] x0 (= 0 x) y0 (= 0 j) hc (get-color table (get line-state j)) j1 (inc j)]
+      (let [head [x j] x0 (= 0 x) y0 (= 0 j) hs (nth line-state j) j1 (inc j)]
         (cond
           (and (not x0) (not y0)) (let [sc (contains? same-ys j)]
                                     (cond
-                                      (and sc (= hc lastc)) (recur i j1 hc (let [lastp [x (dec j)]
-                                                                                 p2 [(dec x) j]]
-                                                                             (fn [avec]
-                                                                               (let [[mpi mii] (f avec)
-                                                                                     lasti (mpi lastp)
-                                                                                     p2i (mpi p2)
-                                                                                     lastii (get mii lasti lasti)
-                                                                                     p2ii (get mii p2i p2i)
-                                                                                     new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
-                                                                                               (< lastii p2ii) (conj mii [p2i lastii])
-                                                                                               :else mii)]
-                                                                                 [(conj mpi [head lasti]) new-mii]))))
-                                      (= hc lastc) (recur i j1 hc (let [lastp [x (dec j)]]
-                                                                    (fn [avec]
-                                                                      (let [[mpi mii] (f avec)
-                                                                            lasti (mpi lastp)]
-                                                                        [(conj mpi [head lasti]) mii]))))
-                                      sc (recur i j1 hc (let [p2 [(dec x) j]]
-                                                          (fn [avec]
-                                                            (let [[mpi mii] (f avec)
-                                                                  p2i (mpi p2)]
-                                                              [(conj mpi [head p2i]) mii]))))
-                                      :else (recur (inc i) j1 hc (let [hv [head i]]
-                                                                   (fn [avec]
-                                                                     (let [[mpi mii] (f avec)]
-                                                                       [(conj mpi hv) mii]))))))
-          (and x0 (not y0)) (if (= hc lastc)
-                              (recur i j1 hc (let [lastp [x (dec j)]]
-                                               (fn [avec]
-                                                 (let [[mpi mii] (f avec)
-                                                       lasti (mpi lastp)]
-                                                   [(conj mpi [head lasti]) mii]))))
-                              (recur (inc i) j1 hc (let [hv [head i]]
-                                                     (fn [avec]
-                                                       (let [[mpi mii] (f avec)]
-                                                         [(conj mpi hv) mii])))))
+                                      (and sc hs) (recur i j1 (let [lastp [x (dec j)]
+                                                                    p2 [(dec x) j]]
+                                                                (fn [avec]
+                                                                  (let [[mpi mii] (f avec)
+                                                                        lasti (mpi lastp)
+                                                                        p2i (mpi p2)
+                                                                        lastii (get mii lasti lasti)
+                                                                        p2ii (get mii p2i p2i)
+                                                                        new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
+                                                                                  (< lastii p2ii) (conj mii [p2i lastii])
+                                                                                  :else mii)]
+                                                                    [(conj mpi [head lasti]) new-mii]))))
+                                      hs (recur i j1 (let [lastp [x (dec j)]]
+                                                       (fn [avec]
+                                                         (let [[mpi mii] (f avec)
+                                                               lasti (mpi lastp)]
+                                                           [(conj mpi [head lasti]) mii]))))
+                                      sc (recur i j1 (let [p2 [(dec x) j]]
+                                                       (fn [avec]
+                                                         (let [[mpi mii] (f avec)
+                                                               p2i (mpi p2)]
+                                                           [(conj mpi [head p2i]) mii]))))
+                                      :else (recur (inc i) j1 (let [hv [head i]]
+                                                                (fn [avec]
+                                                                  (let [[mpi mii] (f avec)]
+                                                                    [(conj mpi hv) mii]))))))
+          (and x0 (not y0)) (if hs
+                              (recur i j1 (let [lastp [x (dec j)]]
+                                            (fn [avec]
+                                              (let [[mpi mii] (f avec)
+                                                    lasti (mpi lastp)]
+                                                [(conj mpi [head lasti]) mii]))))
+                              (recur (inc i) j1 (let [hv [head i]]
+                                                  (fn [avec]
+                                                    (let [[mpi mii] (f avec)]
+                                                      [(conj mpi hv) mii])))))
           (and (not x0) y0) (if (contains? same-ys j)
-                              (recur i j1 hc (let [p2 [(dec x) j]]
-                                               (fn [avec]
-                                                 (let [[mpi mii] (f avec)]
-                                                   [(conj mpi [head (mpi p2)]) mii]))))
-                              (recur (inc i) j1 hc (let [hv [head i]]
-                                                     (fn [avec]
-                                                       (let [[mpi mii] (f avec)]
-                                                         [(conj mpi hv) mii])))))
-          :else (recur (inc i) j1 hc (let [hv [head i]]
-                                       (fn [avec]
-                                         (let [[mpi mii] (f avec)]
-                                           [(conj mpi hv) mii])))))))))
+                              (recur i j1 (let [p2 [(dec x) j]]
+                                            (fn [avec]
+                                              (let [[mpi mii] (f avec)]
+                                                [(conj mpi [head (mpi p2)]) mii]))))
+                              (recur (inc i) j1 (let [hv [head i]]
+                                                  (fn [avec]
+                                                    (let [[mpi mii] (f avec)]
+                                                      [(conj mpi hv) mii])))))
+          :else (recur (inc i) j1 (let [hv [head i]]
+                                    (fn [avec]
+                                      (let [[mpi mii] (f avec)]
+                                        [(conj mpi hv) mii])))))))))
 
 (def ^:dynamic dynamic-one-line-group one-line-group)
 
@@ -124,10 +135,18 @@
   ([table state]
     (line-group table state (map-indexed indexed-count state)))
   ([table state xcount-seq]
-    (reduce #(let [x (first %2) ls (nth state x)
-                   si (dynamic-same-indexs table ls (get state (dec x)))]
-               ((dynamic-one-line-group table ls si x (second %2)) %1))
-      [{} {}] xcount-seq)))
+    (if (empty? xcount-seq)
+      [{} {}]
+      (let [n (count xcount-seq)
+            xcv (vec xcount-seq)]
+        (loop [i 0 lastl nil result [{} {}]]
+          (if (= i n)
+            result
+            (let [xc (nth xcv i)
+                  x (first xc)
+                  lc (dynamic-color-line table (nth state x))
+                  si (if lastl (dynamic-same-indexs lc lastl) #{})]
+              (recur (inc i) lc ((dynamic-one-line-group (dynamic-same-color-line lc) si x (second xc)) result)))))))))
 
 (def count-pred (comp (partial < 1) count))
 
@@ -268,7 +287,11 @@
                                                 -1))))))))
 
 (defn popstars [table]
-  (binding [dynamic-group (memoize group) dynamic-same-indexs (memoize same-indexs) dynamic-one-line-group (memoize one-line-group)]
+  (binding [dynamic-group (memoize group)
+            dynamic-same-indexs (memoize same-indexs)
+            dynamic-one-line-group (memoize one-line-group)
+            dynamic-same-color-line (memoize same-color-line)
+            dynamic-color-line (memoize color-line)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
            saw {} estimation 0 wanted nil]
       (if-let [head (first available)]
