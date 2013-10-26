@@ -70,55 +70,30 @@
     (first
       (reduce-kv
         (fn [[f i] j hs]
-          (let [head [x j] x0 (= 0 x) y0 (= 0 j)]
+          (let [head [x j] sc (contains? same-ys j)]
             (cond
-              (and (not x0) (not y0)) (let [sc (contains? same-ys j)]
-                                        (cond
-                                          (and sc hs) [(let [lastp [x (dec j)]
-                                                             p2 [(dec x) j]]
-                                                         (fn [avec]
-                                                           (let [[mpi mii] (f avec)
-                                                                 lasti (mpi lastp)
-                                                                 p2i (mpi p2)
-                                                                 lastii (get mii lasti lasti)
-                                                                 p2ii (get mii p2i p2i)
-                                                                 new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
-                                                                           (< lastii p2ii) (conj mii [p2i lastii])
-                                                                           :else mii)]
-                                                             [(conj mpi [head lasti]) new-mii]))) i]
-                                          hs [(let [lastp [x (dec j)]]
-                                                (fn [avec]
-                                                  (let [[mpi mii] (f avec)
-                                                        lasti (mpi lastp)]
-                                                    [(conj mpi [head lasti]) mii]))) i]
-                                          sc [(let [p2 [(dec x) j]]
-                                                (fn [avec]
-                                                  (let [[mpi mii] (f avec)
-                                                        p2i (mpi p2)]
-                                                    [(conj mpi [head p2i]) mii]))) i]
-                                          :else [(let [hv [head i]]
-                                                   (fn [avec]
-                                                     (let [[mpi mii] (f avec)]
-                                                       [(conj mpi hv) mii]))) (inc i)]))
-              (and x0 (not y0)) (if hs
-                                  [(let [lastp [x (dec j)]]
-                                     (fn [avec]
-                                       (let [[mpi mii] (f avec)
-                                             lasti (mpi lastp)]
-                                         [(conj mpi [head lasti]) mii]))) i]
-                                  [(let [hv [head i]]
-                                     (fn [avec]
-                                       (let [[mpi mii] (f avec)]
-                                         [(conj mpi hv) mii]))) (inc i)])
-              (and (not x0) y0) (if (contains? same-ys j)
-                                  [(let [p2 [(dec x) j]]
-                                     (fn [avec]
-                                       (let [[mpi mii] (f avec)]
-                                         [(conj mpi [head (mpi p2)]) mii]))) i]
-                                  [(let [hv [head i]]
-                                     (fn [avec]
-                                       (let [[mpi mii] (f avec)]
-                                         [(conj mpi hv) mii]))) (inc i)])
+              (and sc hs) [(let [lastp [x (dec j)]
+                                 p2 [(dec x) j]]
+                             (fn [avec]
+                               (let [[mpi mii] (f avec)
+                                     lasti (mpi lastp)
+                                     p2i (mpi p2)
+                                     lastii (get mii lasti lasti)
+                                     p2ii (get mii p2i p2i)
+                                     new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
+                                               (< lastii p2ii) (conj mii [p2i lastii])
+                                               :else mii)]
+                                 [(conj mpi [head lasti]) new-mii]))) i]
+              hs [(let [lastp [x (dec j)]]
+                    (fn [avec]
+                      (let [[mpi mii] (f avec)
+                            lasti (mpi lastp)]
+                        [(conj mpi [head lasti]) mii]))) i]
+              sc [(let [p2 [(dec x) j]]
+                    (fn [avec]
+                      (let [[mpi mii] (f avec)
+                            p2i (mpi p2)]
+                        [(conj mpi [head p2i]) mii]))) i]
               :else [(let [hv [head i]]
                        (fn [avec]
                          (let [[mpi mii] (f avec)]
