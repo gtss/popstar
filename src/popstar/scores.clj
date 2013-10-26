@@ -31,9 +31,11 @@
 (defn inner-vec [ix iy]
   (mapv (partial vector ix) (range iy)))
 
+(def line-length (range 11))
+
 (def cached-index-lines
-  (vec (for [x (range 10)]
-         (vec (for [length (range 11)]
+  (vec (for [x line-index]
+         (vec (for [length line-length]
                 (inner-vec x length))))))
 
 (def get-line (comp (partial get-in cached-index-lines) vector))
@@ -64,6 +66,10 @@
   (mapv = cline (cons nil cline)))
 
 (def ^:dynamic dynamic-same-color-line same-color-line)
+
+(defn one-line-group-pair [x] [identity (* 10 x)])
+
+(def one-line-group-pairs (mapv one-line-group-pair line-length))
 
 (defn one-line-group [line-state same-ys x y]
   (memoize
@@ -98,20 +104,24 @@
                        (fn [avec]
                          (let [[mpi mii] (f avec)]
                            [(conj mpi hv) mii]))) (inc i)])))
-        [identity (* 10 x)] line-state))))
+        (nth one-line-group-pairs x) line-state))))
 
 (def ^:dynamic dynamic-one-line-group one-line-group)
+
+(def base-line-group-pair [[{} {}] nil])
+
+(defn line-group-reducer [table [inner-pair lastl] index line-state]
+  (let [lc (dynamic-color-line table line-state)
+        si (if lastl (dynamic-same-indexs lc lastl) #{})]
+    [((dynamic-one-line-group (dynamic-same-color-line lc) si index (count line-state)) inner-pair) lc]))
 
 (defn line-group
   ([table]
     (let [state (index-matrix table)]
       (line-group table state)))
   ([table state]
-    (first (reduce-kv #(let [lc (dynamic-color-line table %3)
-                             lastl (second %1)
-                             si (if lastl (dynamic-same-indexs lc lastl) #{})]
-                         [((dynamic-one-line-group (dynamic-same-color-line lc) si %2 (count %3)) (first %1)) lc])
-             [[{} {}] nil] state))))
+    (first (reduce-kv (partial line-group-reducer table)
+             base-line-group-pair state))))
 
 (def count-pred (comp (partial < 1) count))
 
@@ -158,16 +168,22 @@
   (^long [path]
     (+ (total-score path) (-> path current-state count-matrix bonus))))
 
+(def v0 [0])
+
+(def v1 [1])
+
 (defn merge-info-to-vector-from-a-seq [vector-c2 aseq]
   (let [n (count aseq)]
-    (if (= 1 n)
-      (update-in vector-c2 [1] inc)
-      (update-in vector-c2 [0] (partial + (score n))))))
+    (if (== 1 n)
+      (update-in vector-c2 v1 inc)
+      (update-in vector-c2 v0 (partial + (score n))))))
+
+(def v00 [0 0])
 
 (defn simple-max-estimation [path]
   (let [gs (vals (apply merge-with concat
                    (map (partial group-by (partial get-color (:table path))) (current-state path))))
-        tmp (reduce merge-info-to-vector-from-a-seq [0 0] gs)]
+        tmp (reduce merge-info-to-vector-from-a-seq v00 gs)]
     (+ (total-score path) (first tmp) (bonus (second tmp)))))
 
 (def comp-score-count (comp score count))
@@ -213,11 +229,15 @@
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
 (defn score-differ [path1 path2]
-  (condp = (compare (total-score path1) (total-score path2))
+  (condp == (compare (total-score path1) (total-score path2))
     1 :gt ;
     -1 :lt ;
     0 :eq ;
     :nc ))
+
+(def fset #{nil :nc })
+
+(def tset #{:gt :nc })
 
 (defn diff ([path1 path2]
              (diff path1 path2 :nc score-differ))
@@ -229,7 +249,7 @@
       :else (loop [[head & tail] preds]
               (if head
                 (let [result (head path1 path2)]
-                  (if (contains? #{nil :nc } result)
+                  (if (contains? fset result)
                     (recur tail)
                     result))
                 default-value)))))
@@ -239,8 +259,8 @@
                         (let [me1 (min-estimation %1)
                               me2 (min-estimation %2)]
                           (cond
-                            (> (- me1) (- me2)) 1
-                            (< (- me1) (- me2)) -1
+                            (< me1 me2) 1
+                            (> me1 me2) -1
                             :else (let [ts1 (total-score %1)
                                         ts2 (total-score %2)]
                                     (cond
@@ -270,7 +290,7 @@
                                                (contains? saw state) (diff path (saw state))
                                                (> estimation (max-estimation head)) :lt ;
                                                :else :nc )]
-                              (if (contains? #{:gt :nc } difference)
+                              (if (contains? tset difference)
                                 (conj result-map [state path])
                                 result-map))) {} paths)
                 new-estimation (max estimation (min-estimation head))]
