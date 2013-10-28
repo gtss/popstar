@@ -130,8 +130,6 @@
 
 (def group (comp group-from-line-group line-group))
 
-(def ^:dynamic dynamic-group group)
-
 (def partial-filterv-complement-nil? (partial filterv complement-nil?))
 
 (def assoc-in-nil #(assoc-in %1 %2 nil))
@@ -194,7 +192,7 @@
     (+seq (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
 
 (defn path-groups [path]
-  (dynamic-group (:table path) (current-state path)))
+  (group (:table path) (current-state path)))
 
 (defn empty-actions [_] [])
 
@@ -214,9 +212,9 @@
     (memoize simple-min-estimation)))
 
 (defn next-lazy-cached-path [prev-path last-action]
-  (let [actions-fn (memoize (fn [self] (conj (actions prev-path) last-action)))
+  (let [actions-fn (memoize (fn [_] (conj (actions prev-path) last-action)))
         path-total-score-fn (memoize (fn [_] (+ (total-score prev-path) (comp-score-count last-action))))
-        current-state-fn (memoize (fn [self] (eliminate (current-state prev-path) last-action)))]
+        current-state-fn (memoize (fn [_] (eliminate (current-state prev-path) last-action)))]
     (->LazyCachedPath
       (:table prev-path)
       (memoize path-groups)
@@ -237,7 +235,7 @@
 
 (def fset #{nil :nc })
 
-(def tset #{:gt :nc })
+(def gset #{:gt :nc })
 
 (defn diff ([path1 path2]
              (diff path1 path2 :nc score-differ))
@@ -272,8 +270,7 @@
                                                 -1))))))))
 
 (defn popstars [table]
-  (binding [dynamic-group (memoize group)
-            dynamic-same-indexs (memoize same-indexs)
+  (binding [dynamic-same-indexs (memoize same-indexs)
             dynamic-one-line-group (memoize one-line-group)
             dynamic-same-color-line (memoize same-color-line)
             dynamic-color-line (memoize color-line)]
@@ -290,7 +287,7 @@
                                                (contains? saw state) (diff path (saw state))
                                                (> estimation (max-estimation head)) :lt ;
                                                :else :nc )]
-                              (if (contains? tset difference)
+                              (if (contains? gset difference)
                                 (conj result-map [state path])
                                 result-map))) {} paths)
                 new-estimation (max estimation (min-estimation head))]
