@@ -290,10 +290,11 @@
                               (if (contains? gset difference)
                                 (conj result-map [state path])
                                 result-map))) {} paths)
-                new-estimation (max estimation (min-estimation head))]
-            (if (empty? new-saw)
+                new-paths (vals new-saw)
+                new-estimation (apply max estimation (min-estimation head) (map min-estimation new-paths))]
+            (if (empty? new-paths)
               (recur (disj available head) saw new-estimation wanted)
-              (recur (apply conj (disj available head) (vals new-saw)) (merge saw new-saw) new-estimation wanted)))
+              (recur (apply conj (disj available head) new-paths) (merge saw new-saw) new-estimation wanted)))
           (let [score (end-score head)]
             (cond (empty? wanted) (recur (disj available head) saw (max estimation score) [head score])
               (> score (nth wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
