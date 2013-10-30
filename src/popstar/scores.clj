@@ -269,6 +269,16 @@
                                               (if (> cg1 cg2) 1
                                                 -1))))))))
 
+(defn children-reducer [[result-set result-map result-long :as prev] path]
+  (let [state (current-state path)
+        difference (cond
+                     (contains? result-map state) (diff path (result-map state))
+                     (> result-long (max-estimation path)) :lt ;
+                     :else :nc )]
+    (if (contains? gset difference)
+      [(conj result-set path) (conj result-map [state path]) (max result-long (min-estimation path))]
+      prev)))
+
 (defn popstars [table]
   (binding [dynamic-same-indexs (memoize same-indexs)
             dynamic-one-line-group (memoize one-line-group)
@@ -277,28 +287,15 @@
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
            saw {} estimation 0 wanted nil]
       (if-let [head (first available)]
-        (if-let [head-groups (not-empty (groups head))]
-          (let [paths (map #(next-lazy-cached-path head %) head-groups)
-                new-saw (reduce
-                          (fn [result-map path]
-                            (let [state (current-state path)
-                                  difference (cond
-                                               (contains? result-map state) (diff path (result-map state))
-                                               (contains? saw state) (diff path (saw state))
-                                               (> estimation (max-estimation path)) :lt ;
-                                               :else :nc )]
-                              (if (contains? gset difference)
-                                (conj result-map [state path])
-                                result-map))) {} paths)
-                new-paths (vals new-saw)
-                new-estimation (apply max estimation (min-estimation head) (map min-estimation new-paths))]
-            (if (empty? new-paths)
-              (recur (disj available head) saw new-estimation wanted)
-              (recur (apply conj (disj available head) new-paths) (merge saw new-saw) new-estimation wanted)))
-          (let [score (end-score head)]
-            (cond (empty? wanted) (recur (disj available head) saw (max estimation score) [head score])
-              (> score (nth wanted 1)) (recur (disj available head) saw (max estimation score) [head score])
-              :else (recur (disj available head) saw estimation wanted))))
+        (let [others (disj available head)]
+          (if-let [head-groups (not-empty (groups head))]
+            (let [paths (map #(next-lazy-cached-path head %) head-groups)
+                  [new-available new-saw new-estimation] (reduce children-reducer [others saw estimation] paths)]
+              (recur new-available new-saw (long new-estimation) wanted))
+            (let [score (end-score head)]
+              (if (or (nil? wanted) (> score (nth wanted 1)))
+                (recur others saw (max estimation score) [head score])
+                (recur others saw estimation wanted)))))
         wanted))))
 
 (defn rand-color []
