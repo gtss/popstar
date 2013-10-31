@@ -71,7 +71,7 @@
 
 (def one-line-group-pairs (mapv one-line-group-pair line-length))
 
-(defn one-line-group [line-state same-ys x y]
+(defn one-line-group [line-state same-ys x]
   (memoize
     (first
       (reduce-kv
@@ -113,7 +113,7 @@
 (defn line-group-reducer [table [inner-pair lastl] index line-state]
   (let [lc (dynamic-color-line table line-state)
         si (if lastl (dynamic-same-indexs lc lastl) #{})]
-    [((dynamic-one-line-group (dynamic-same-color-line lc) si index (count line-state)) inner-pair) lc]))
+    [((dynamic-one-line-group (dynamic-same-color-line lc) si index) inner-pair) lc]))
 
 (defn line-group
   ([table]
