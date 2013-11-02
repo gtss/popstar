@@ -60,8 +60,6 @@
 (defn same-indexs [line-state last-line-state]
   (set (filter complement-nil? (map when= line-state last-line-state line-index))))
 
-(def ^:dynamic dynamic-same-indexs same-indexs)
-
 (defn same-color-line [cline]
   (mapv = cline (cons nil cline)))
 
@@ -131,7 +129,7 @@
 (defn line-group-reducer-maker [table]
   (fn [[inner-pair lastl] index line-state]
     (let [lc (dynamic-color-line table line-state)
-          si (if lastl (dynamic-same-indexs lc lastl) #{})]
+          si (if lastl (same-indexs lc lastl) #{})]
       [((dynamic-one-line-group (dynamic-same-color-line lc) si index) inner-pair) lc])))
 
 (defn line-group
@@ -299,8 +297,7 @@
       prev)))
 
 (defn popstars [table]
-  (binding [dynamic-same-indexs (memoize same-indexs)
-            dynamic-one-line-group (memoize (comp memoize one-line-group))
+  (binding [dynamic-one-line-group (memoize (comp memoize one-line-group))
             dynamic-same-color-line (memoize same-color-line)
             dynamic-color-line (memoize color-line)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
