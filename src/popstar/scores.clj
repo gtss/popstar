@@ -67,10 +67,6 @@
 
 (def ^:dynamic dynamic-same-color-line same-color-line)
 
-(defn one-line-group-pair [x] [identity (* 10 x)])
-
-(def one-line-group-pairs (mapv one-line-group-pair line-length))
-
 (defn xy-component-maker [x j]
   (let [head [x j] lastp [x (dec j)] p2 [(dec x) j]]
     (fn [[mpi mii]]
@@ -106,19 +102,27 @@
     (fn [[mpi mii]]
       [(conj mpi hv) mii])))
 
-(def cache-i-component (mapv (fn [x] (mapv (fn [j] (mapv #(i-component-maker x j %) (range 99))) line-index)) line-index))
+(def cached-i-component (mapv (fn [x] (mapv (fn [j] (mapv #(i-component-maker x j %) (range 99))) line-index)) line-index))
+
+(defn reverse-call [o f]
+  (f o))
+
+(defn simple-reverse-comp [aseq]
+  (fn [obj]
+    (reduce reverse-call obj aseq)))
 
 (defn one-line-group [line-state same-ys x]
-  (first
-    (reduce-kv
-      (fn [[f i] j hs]
-        (let [sc (contains? same-ys j)]
-          (cond
-            (and sc hs) [(comp (get-in cached-xy-component [x j]) f) i]
-            hs [(comp (get-in cached-x-component [x j]) f) i]
-            sc [(comp (get-in cached-y-component [x j]) f) i]
-            :else [(comp (get-in cache-i-component [x j i]) f) (inc i)])))
-      (nth one-line-group-pairs x) line-state)))
+  (let [base (* 10 x)]
+    (simple-reverse-comp
+      (reduce-kv
+        (fn [fs j hs]
+          (let [sc (contains? same-ys j)]
+            (cond
+              (and sc hs) (conj fs (get-in cached-xy-component [x j]))
+              hs (conj fs (get-in cached-x-component [x j]))
+              sc (conj fs (get-in cached-y-component [x j]))
+              :else (conj fs (get-in cached-i-component [x j (+ base j)])))))
+        [] line-state))))
 
 (def ^:dynamic dynamic-one-line-group one-line-group)
 
