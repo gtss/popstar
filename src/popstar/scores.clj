@@ -71,40 +71,54 @@
 
 (def one-line-group-pairs (mapv one-line-group-pair line-length))
 
+(defn xy-component-maker [x j]
+  (let [head [x j] lastp [x (dec j)] p2 [(dec x) j]]
+    (fn [[mpi mii]]
+      (let [lasti (mpi lastp)
+            p2i (mpi p2)
+            lastii (get mii lasti lasti)
+            p2ii (get mii p2i p2i)
+            new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
+                      (< lastii p2ii) (conj mii [p2i lastii])
+                      :else mii)]
+        [(conj mpi [head lasti]) new-mii]))))
+
+(def cached-xy-component (mapv (fn [x] (mapv #(xy-component-maker x %) line-index)) line-index))
+
+(defn x-component-maker [x j]
+  (let [head [x j] lastp [x (dec j)]]
+    (fn [[mpi mii]]
+      (let [lasti (mpi lastp)]
+        [(conj mpi [head lasti]) mii]))))
+
+(def cached-x-component (mapv (fn [x] (mapv #(x-component-maker x %) line-index)) line-index))
+
+(defn y-component-maker [x j]
+  (let [head [x j] p2 [(dec x) j]]
+    (fn [[mpi mii]]
+      (let [p2i (mpi p2)]
+        [(conj mpi [head p2i]) mii]))))
+
+(def cached-y-component (mapv (fn [x] (mapv #(y-component-maker x %) line-index)) line-index))
+
+(defn i-component-maker [x j i]
+  (let [hv [[x j] i]]
+    (fn [[mpi mii]]
+      [(conj mpi hv) mii])))
+
+(def cache-i-component (mapv (fn [x] (mapv (fn [j] (mapv #(i-component-maker x j %) (range 99))) line-index)) line-index))
+
 (defn one-line-group [line-state same-ys x]
-  (memoize
-    (first
-      (reduce-kv
-        (fn [[f i] j hs]
-          (let [head [x j] sc (contains? same-ys j)]
-            (cond
-              (and sc hs) [(let [lastp [x (dec j)]
-                                 p2 [(dec x) j]]
-                             (fn [avec]
-                               (let [[mpi mii] (f avec)
-                                     lasti (mpi lastp)
-                                     p2i (mpi p2)
-                                     lastii (get mii lasti lasti)
-                                     p2ii (get mii p2i p2i)
-                                     new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
-                                               (< lastii p2ii) (conj mii [p2i lastii])
-                                               :else mii)]
-                                 [(conj mpi [head lasti]) new-mii]))) i]
-              hs [(let [lastp [x (dec j)]]
-                    (fn [avec]
-                      (let [[mpi mii] (f avec)
-                            lasti (mpi lastp)]
-                        [(conj mpi [head lasti]) mii]))) i]
-              sc [(let [p2 [(dec x) j]]
-                    (fn [avec]
-                      (let [[mpi mii] (f avec)
-                            p2i (mpi p2)]
-                        [(conj mpi [head p2i]) mii]))) i]
-              :else [(let [hv [head i]]
-                       (fn [avec]
-                         (let [[mpi mii] (f avec)]
-                           [(conj mpi hv) mii]))) (inc i)])))
-        (nth one-line-group-pairs x) line-state))))
+  (first
+    (reduce-kv
+      (fn [[f i] j hs]
+        (let [sc (contains? same-ys j)]
+          (cond
+            (and sc hs) [(comp (get-in cached-xy-component [x j]) f) i]
+            hs [(comp (get-in cached-x-component [x j]) f) i]
+            sc [(comp (get-in cached-y-component [x j]) f) i]
+            :else [(comp (get-in cache-i-component [x j i]) f) (inc i)])))
+      (nth one-line-group-pairs x) line-state)))
 
 (def ^:dynamic dynamic-one-line-group one-line-group)
 
@@ -281,7 +295,7 @@
 
 (defn popstars [table]
   (binding [dynamic-same-indexs (memoize same-indexs)
-            dynamic-one-line-group (memoize one-line-group)
+            dynamic-one-line-group (memoize (comp memoize one-line-group))
             dynamic-same-color-line (memoize same-color-line)
             dynamic-color-line (memoize color-line)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
