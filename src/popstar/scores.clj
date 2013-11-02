@@ -87,7 +87,7 @@
       (let [lasti (mpi lastp)]
         [(conj mpi [head lasti]) mii]))))
 
-(def cached-x-component (mapv (fn [x] (mapv #(x-component-maker x %) line-index)) line-index))
+(def cached-x-component (mapv #(mapv (partial x-component-maker %) line-index) line-index))
 
 (defn y-component-maker [x j]
   (let [head [x j] p2 [(dec x) j]]
@@ -95,14 +95,14 @@
       (let [p2i (mpi p2)]
         [(conj mpi [head p2i]) mii]))))
 
-(def cached-y-component (mapv (fn [x] (mapv #(y-component-maker x %) line-index)) line-index))
+(def cached-y-component (mapv #(mapv (partial y-component-maker %) line-index) line-index))
 
 (defn i-component-maker [x j i]
   (let [hv [[x j] i]]
     (fn [[mpi mii]]
       [(conj mpi hv) mii])))
 
-(def cached-i-component (mapv (fn [x] (mapv (fn [j] (mapv #(i-component-maker x j %) (range 99))) line-index)) line-index))
+(def cached-i-component (mapv (fn [x] (mapv #(mapv (partial i-component-maker x %) (range 99)) line-index)) line-index))
 
 (defn reverse-call [o f]
   (f o))
@@ -128,18 +128,19 @@
 
 (def base-line-group-pair [[{} {}] nil])
 
-(defn line-group-reducer [table [inner-pair lastl] index line-state]
-  (let [lc (dynamic-color-line table line-state)
-        si (if lastl (dynamic-same-indexs lc lastl) #{})]
-    [((dynamic-one-line-group (dynamic-same-color-line lc) si index) inner-pair) lc]))
+(defn line-group-reducer-maker [table]
+  (fn [[inner-pair lastl] index line-state]
+    (let [lc (dynamic-color-line table line-state)
+          si (if lastl (dynamic-same-indexs lc lastl) #{})]
+      [((dynamic-one-line-group (dynamic-same-color-line lc) si index) inner-pair) lc])))
 
 (defn line-group
   ([table]
     (let [state (index-matrix table)]
       (line-group table state)))
   ([table state]
-    (first (reduce-kv (partial line-group-reducer table)
-             base-line-group-pair state))))
+    (nth (reduce-kv (line-group-reducer-maker table)
+           base-line-group-pair state) 0)))
 
 (def count-pred (comp (partial < 1) count))
 
@@ -199,8 +200,8 @@
 (defn simple-max-estimation [path]
   (let [gs (vals (apply merge-with concat
                    (map (partial group-by (partial get-color (:table path))) (current-state path))))
-        tmp (reduce merge-info-to-vector-from-a-seq v00 gs)]
-    (+ (total-score path) (first tmp) (bonus (second tmp)))))
+        [s r] (reduce merge-info-to-vector-from-a-seq v00 gs)]
+    (+ (total-score path) s (bonus r))))
 
 (def comp-score-count (comp score count))
 
@@ -303,7 +304,7 @@
             dynamic-same-color-line (memoize same-color-line)
             dynamic-color-line (memoize color-line)]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
-           saw {} estimation 0 wanted nil]
+           saw {} estimation 0 [wanted-score :as wanted] nil]
       (if-let [head (first available)]
         (let [others (disj available head)]
           (if-let [head-groups (not-empty (groups head))]
@@ -311,8 +312,8 @@
                   [new-available new-saw new-estimation] (reduce children-reducer [others saw estimation] paths)]
               (recur new-available new-saw (long new-estimation) wanted))
             (let [score (end-score head)]
-              (if (or (nil? wanted) (> score (nth wanted 1)))
-                (recur others saw (max estimation score) [head score])
+              (if (or (nil? wanted) (> score wanted-score))
+                (recur others saw (max estimation score) [score head])
                 (recur others saw estimation wanted)))))
         wanted))))
 
