@@ -60,10 +60,8 @@
 (defn same-indexs [line-state last-line-state]
   (set (filter complement-nil? (map when= line-state last-line-state line-index))))
 
-(defn same-color-line [cline]
-  (mapv = cline (cons nil cline)))
-
-(def ^:dynamic dynamic-same-color-line same-color-line)
+(defn component-cache-maker [component-maker]
+  (mapv (fn [x] (mapv #(component-maker x %) line-index)) line-index))
 
 (defn xy-component-maker [x j]
   (let [head [x j] lastp [x (dec j)] p2 [(dec x) j]]
@@ -77,7 +75,10 @@
                       :else mii)]
         [(conj mpi [head lasti]) new-mii]))))
 
-(def cached-xy-component (mapv (fn [x] (mapv #(xy-component-maker x %) line-index)) line-index))
+(def cached-xy-component (component-cache-maker xy-component-maker))
+
+(defn xy-component-selector [x j _]
+  (get-in cached-xy-component [x j]))
 
 (defn x-component-maker [x j]
   (let [head [x j] lastp [x (dec j)]]
@@ -85,7 +86,10 @@
       (let [lasti (mpi lastp)]
         [(conj mpi [head lasti]) mii]))))
 
-(def cached-x-component (mapv #(mapv (partial x-component-maker %) line-index) line-index))
+(def cached-x-component (component-cache-maker x-component-maker))
+
+(defn x-component-selector [x j _]
+  (get-in cached-x-component [x j]))
 
 (defn y-component-maker [x j]
   (let [head [x j] p2 [(dec x) j]]
@@ -93,7 +97,10 @@
       (let [p2i (mpi p2)]
         [(conj mpi [head p2i]) mii]))))
 
-(def cached-y-component (mapv #(mapv (partial y-component-maker %) line-index) line-index))
+(def cached-y-component (component-cache-maker y-component-maker))
+
+(defn y-component-selector [x j _]
+  (get-in cached-y-component [x j]))
 
 (defn i-component-maker [x j i]
   (let [hv [[x j] i]]
@@ -102,25 +109,42 @@
 
 (def cached-i-component (mapv (fn [x] (mapv #(mapv (partial i-component-maker x %) (range 99)) line-index)) line-index))
 
+(defn i-component-selector [x j base]
+  (get-in cached-i-component [x j (+ base j)]))
+
+(def nil10 (vec (repeat 10 nil)))
+
+(defn type-selector [current-color prev-color prev-line-color]
+  (let [scx (= current-color prev-color)
+        scy (= current-color prev-line-color)]
+    (cond
+      (and scy scx) xy-component-selector
+      scx x-component-selector
+      scy y-component-selector
+      :else i-component-selector)))
+
 (defn reverse-call [o f]
   (f o))
+
+(def partial-partial-type-selector (partial partial type-selector))
+
+(defn type-selectors-maker [cline]
+  (let [ptss (mapv partial-partial-type-selector cline (cons nil cline))]
+    (fn [lcline]
+      (mapv reverse-call (concat lcline nil10) ptss))))
+
+(def ^:dynamic dynamic-type-selectors-maker type-selectors-maker)
 
 (defn simple-reverse-comp [aseq]
   (fn [obj]
     (reduce reverse-call obj aseq)))
 
-(defn one-line-group [line-state same-ys x]
+(defn one-line-group [type-selectors x]
   (let [base (* 10 x)]
     (simple-reverse-comp
-      (reduce-kv
-        (fn [fs j hs]
-          (let [sc (contains? same-ys j)]
-            (cond
-              (and sc hs) (conj fs (get-in cached-xy-component [x j]))
-              hs (conj fs (get-in cached-x-component [x j]))
-              sc (conj fs (get-in cached-y-component [x j]))
-              :else (conj fs (get-in cached-i-component [x j (+ base j)])))))
-        [] line-state))))
+      (map-indexed
+        (fn [j ts]
+          (ts x j base)) type-selectors))))
 
 (def ^:dynamic dynamic-one-line-group one-line-group)
 
@@ -129,8 +153,8 @@
 (defn line-group-reducer-maker [table]
   (fn [[inner-pair lastl] index line-state]
     (let [lc (dynamic-color-line table line-state)
-          si (if lastl (same-indexs lc lastl) #{})]
-      [((dynamic-one-line-group (dynamic-same-color-line lc) si index) inner-pair) lc])))
+          sml (dynamic-type-selectors-maker lc)]
+      [((dynamic-one-line-group (sml lastl) index) inner-pair) lc])))
 
 (defn line-group
   ([table]
@@ -298,21 +322,21 @@
 
 (defn popstars [table]
   (binding [dynamic-one-line-group (memoize (comp memoize one-line-group))
-            dynamic-same-color-line (memoize same-color-line)
-            dynamic-color-line (memoize color-line)]
+            dynamic-color-line (memoize color-line)
+            dynamic-type-selectors-maker (memoize (comp memoize type-selectors-maker))]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
-           saw {} estimation 0 [wanted-score :as wanted] nil]
+           saw {} estimation 0 wanted-score 0 wanted nil]
       (if-let [head (first available)]
         (let [others (disj available head)]
           (if-let [head-groups (not-empty (groups head))]
             (let [paths (map #(next-lazy-cached-path head %) head-groups)
                   [new-available new-saw new-estimation] (reduce children-reducer [others saw estimation] paths)]
-              (recur new-available new-saw (long new-estimation) wanted))
+              (recur new-available new-saw (long new-estimation) wanted-score wanted))
             (let [score (end-score head)]
               (if (or (nil? wanted) (> score wanted-score))
-                (recur others saw (max estimation score) [score head])
-                (recur others saw estimation wanted)))))
-        wanted))))
+                (recur others saw (max estimation score) score head)
+                (recur others saw estimation wanted-score wanted)))))
+        [wanted-score wanted]))))
 
 (defn rand-color []
   (rand-nth (vec colors)))
