@@ -164,10 +164,23 @@
     (nth (reduce-kv (line-group-reducer-maker table)
            base-line-group-pair state) 0)))
 
+(defn select-group-by [f f2 coll]
+  (persistent!
+    (reduce
+      (fn [ret x]
+        (let [k (f x)]
+          (assoc! ret k (conj (get ret k []) (f2 x)))))
+      (transient {}) coll)))
+
 (def count-pred (comp (partial < 1) count))
 
+(defn group-by-pred-maker [mii]
+  (fn [e]
+    (let [i (val e)]
+      (get mii i i))))
+
 (defn group-from-line-group [[mpi mii]]
-  (filter count-pred (vals (group-by #(let [i (mpi %)] (get mii i i)) (keys mpi)))))
+  (filter count-pred (vals (select-group-by (group-by-pred-maker mii) key mpi))))
 
 (def group (comp group-from-line-group line-group))
 
@@ -242,28 +255,37 @@
 (defn path-init-state [path]
   (index-matrix (:table path)))
 
+(defn memoize1 [f]
+  (let [mem (atom nil)]
+    (fn [arg]
+      (if-let [e @mem]
+        e
+        (let [ret (f arg)]
+          (reset! mem ret)
+          ret)))))
+
 (defn first-lazy-cached-path [table]
   (->LazyCachedPath
     table
-    (memoize path-groups)
+    (memoize1 path-groups)
     empty-actions
     zero-score
-    (memoize path-init-state)
-    (memoize simple-max-estimation)
-    (memoize simple-min-estimation)))
+    (memoize1 path-init-state)
+    (memoize1 simple-max-estimation)
+    (memoize1 simple-min-estimation)))
 
 (defn next-lazy-cached-path [prev-path last-action]
-  (let [actions-fn (memoize (fn [_] (conj (actions prev-path) last-action)))
-        path-total-score-fn (memoize (fn [_] (+ (total-score prev-path) (comp-score-count last-action))))
-        current-state-fn (memoize (fn [_] (eliminate (current-state prev-path) last-action)))]
+  (let [actions-fn (memoize1 (fn [_] (conj (actions prev-path) last-action)))
+        path-total-score-fn (memoize1 (fn [_] (+ (total-score prev-path) (comp-score-count last-action))))
+        current-state-fn (memoize1 (fn [_] (eliminate (current-state prev-path) last-action)))]
     (->LazyCachedPath
       (:table prev-path)
-      (memoize path-groups)
+      (memoize1 path-groups)
       actions-fn
       path-total-score-fn
       current-state-fn
-      (memoize simple-max-estimation)
-      (memoize simple-min-estimation))))
+      (memoize1 simple-max-estimation)
+      (memoize1 simple-min-estimation))))
 
 (def differences #{:lt :gt :eq :nc }) ;nc is not comparable
 
