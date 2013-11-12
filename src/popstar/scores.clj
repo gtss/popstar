@@ -14,6 +14,8 @@
 
 (def colors #{:b :g :p :r :y })
 
+(defn nth-in [coll ks] (reduce nth coll ks))
+
 ;table [[:b :r :g ] [:p :r :r ] [:y :b :b ]]
 
 ;state [[[0 0] [0 2]] [[1 1] [1 2]] [[2 0] [2 1]]]
@@ -24,12 +26,12 @@
 
 (defn get-color
   ([table states point]
-    (get-in table (get-in states point)))
+    (nth-in table (nth-in states point)))
   ([table state]
-    (get-in table state)))
+    (nth-in table state)))
 
 (defn inner-vec [ix iy]
-  (mapv (partial vector ix) (range iy)))
+  (mapv #(vector ix %) (range iy)))
 
 (def line-length (range 11))
 
@@ -38,20 +40,18 @@
          (vec (for [length line-length]
                 (inner-vec x length))))))
 
-(def get-line (comp (partial get-in cached-index-lines) vector))
+(defn get-line [x y] (nth-in cached-index-lines [x y]))
 
-(def map-count (partial map count))
+(def map-count #(map count %))
 
-(def index-matrix (comp vec (partial map-indexed get-line) map-count))
+(defn index-matrix [coll] (->> coll map-count (map-indexed get-line) vec))
 
-(def +seq (partial apply +))
-
-(def count-matrix (comp +seq map-count))
+(defn count-matrix [coll] (->> coll map-count (apply +)))
 
 (def complement-nil? (complement nil?))
 
 (defn color-line [table line-state]
-  (mapv (partial get-color table) line-state))
+  (mapv #(get-color table %) line-state))
 
 (def ^:dynamic dynamic-color-line color-line)
 
@@ -78,7 +78,7 @@
 (def cached-xy-component (component-cache-maker xy-component-maker))
 
 (defn xy-component-selector [x j _]
-  (get-in cached-xy-component [x j]))
+  (nth-in cached-xy-component [x j]))
 
 (defn x-component-maker [x j]
   (let [head [x j] lastp [x (dec j)]]
@@ -89,7 +89,7 @@
 (def cached-x-component (component-cache-maker x-component-maker))
 
 (defn x-component-selector [x j _]
-  (get-in cached-x-component [x j]))
+  (nth-in cached-x-component [x j]))
 
 (defn y-component-maker [x j]
   (let [head [x j] p2 [(dec x) j]]
@@ -100,17 +100,17 @@
 (def cached-y-component (component-cache-maker y-component-maker))
 
 (defn y-component-selector [x j _]
-  (get-in cached-y-component [x j]))
+  (nth-in cached-y-component [x j]))
 
 (defn i-component-maker [x j i]
   (let [hv [[x j] i]]
     (fn [[mpi mii]]
       [(conj mpi hv) mii])))
 
-(def cached-i-component (mapv (fn [x] (mapv #(mapv (partial i-component-maker x %) (range 99)) line-index)) line-index))
+(def cached-i-component (mapv (fn [x] (mapv (fn [y] (mapv #(i-component-maker x y %) (range 99))) line-index)) line-index))
 
 (defn i-component-selector [x j base]
-  (get-in cached-i-component [x j (+ base j)]))
+  (nth-in cached-i-component [x j (+ base j)]))
 
 (def nil10 (vec (repeat 10 nil)))
 
@@ -126,10 +126,10 @@
 (defn reverse-call [o f]
   (f o))
 
-(def partial-partial-type-selector (partial partial type-selector))
+(def type-selector-maker #(fn [prev-line-color] (type-selector %1 %2 prev-line-color)))
 
 (defn type-selectors-maker [cline]
-  (let [ptss (mapv partial-partial-type-selector cline (cons nil cline))]
+  (let [ptss (mapv type-selector-maker cline (cons nil cline))]
     (fn [lcline]
       (mapv reverse-call (concat lcline nil10) ptss))))
 
@@ -156,13 +156,9 @@
           sml (dynamic-type-selectors-maker lc)]
       [((dynamic-one-line-group (sml lastl) index) inner-pair) lc])))
 
-(defn line-group
-  ([table]
-    (let [state (index-matrix table)]
-      (line-group table state)))
-  ([table state]
-    (nth (reduce-kv (line-group-reducer-maker table)
-           base-line-group-pair state) 0)))
+(defn line-group [table state]
+  (nth (reduce-kv (line-group-reducer-maker table)
+         base-line-group-pair state) 0))
 
 (defn select-group-by [f f2 coll]
   (persistent!
@@ -172,7 +168,7 @@
           (assoc! ret k (conj (get ret k []) (f2 x)))))
       (transient {}) coll)))
 
-(def count-pred (comp (partial < 1) count))
+(defn count-pred [coll] (->> coll count (< 1)))
 
 (defn group-by-pred-maker [mii]
   (fn [e]
@@ -182,15 +178,15 @@
 (defn group-from-line-group [[mpi mii]]
   (filter count-pred (vals (select-group-by (group-by-pred-maker mii) key mpi))))
 
-(def group (comp group-from-line-group line-group))
+(defn group [table state] (group-from-line-group (line-group table state)))
 
-(def partial-filterv-complement-nil? (partial filterv complement-nil?))
+(def filterv-complement-nil? #(filterv complement-nil? %))
 
 (def assoc-in-nil #(assoc-in %1 %2 nil))
 
 (defn eliminate [state agroup]
   (filterv not-empty
-    (mapv partial-filterv-complement-nil?
+    (mapv filterv-complement-nil?
       (reduce assoc-in-nil state agroup))))
 
 (defprotocol Path
@@ -228,22 +224,22 @@
   (let [n (count aseq)]
     (if (== 1 n)
       (update-in vector-c2 v1 inc)
-      (update-in vector-c2 v0 (partial + (score n))))))
+      (update-in vector-c2 v0 #(+ (score n) %)))))
 
 (def v00 [0 0])
 
 (defn simple-max-estimation [path]
   (let [gs (vals (apply merge-with concat
-                   (map (partial group-by (partial get-color (:table path))) (current-state path))))
+                   (map (fn [avec] (group-by #(get-color (:table path) %) avec)) (current-state path))))
         [s r] (reduce merge-info-to-vector-from-a-seq v00 gs)]
     (+ (total-score path) s (bonus r))))
 
-(def comp-score-count (comp score count))
+(defn comp-score-count [coll] (-> coll count score))
 
 (defn simple-min-estimation [path]
   (let [gs (groups path)
         all-n (count-matrix (current-state path))]
-    (+seq (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
+    (apply + (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
 
 (defn path-groups [path]
   (group (:table path) (current-state path)))
@@ -343,9 +339,9 @@
       prev)))
 
 (defn popstars [table]
-  (binding [dynamic-one-line-group (memoize (comp memoize one-line-group))
+  (binding [dynamic-one-line-group (memoize #(memoize (one-line-group %1 %2)))
             dynamic-color-line (memoize color-line)
-            dynamic-type-selectors-maker (memoize (comp memoize type-selectors-maker))]
+            dynamic-type-selectors-maker (memoize #(memoize (type-selectors-maker %)))]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table))
            saw {} estimation 0 wanted-score 0 wanted nil]
       (if-let [head (first available)]
