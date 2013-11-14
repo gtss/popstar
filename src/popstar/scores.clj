@@ -66,8 +66,8 @@
 (defn xy-component-maker [x j]
   (let [head [x j] lastp [x (dec j)] p2 [(dec x) j]]
     (fn [[mpi mii]]
-      (let [lasti (mpi lastp)
-            p2i (mpi p2)
+      (let [lasti (get mpi lastp)
+            p2i (get mpi p2)
             lastii (get mii lasti lasti)
             p2ii (get mii p2i p2i)
             new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
@@ -83,7 +83,7 @@
 (defn x-component-maker [x j]
   (let [head [x j] lastp [x (dec j)]]
     (fn [[mpi mii]]
-      (let [lasti (mpi lastp)]
+      (let [lasti (get mpi lastp)]
         [(conj mpi [head lasti]) mii]))))
 
 (def cached-x-component (component-cache-maker x-component-maker))
@@ -94,7 +94,7 @@
 (defn y-component-maker [x j]
   (let [head [x j] p2 [(dec x) j]]
     (fn [[mpi mii]]
-      (let [p2i (mpi p2)]
+      (let [p2i (get mpi p2)]
         [(conj mpi [head p2i]) mii]))))
 
 (def cached-y-component (component-cache-maker y-component-maker))
@@ -182,12 +182,15 @@
 
 (def filterv-complement-nil? #(filterv complement-nil? %))
 
-(def assoc-in-nil #(assoc-in %1 %2 nil))
+(defn assoc-matrix [matrix [x y] v]
+  (assoc matrix x (assoc (nth matrix x) y v)))
+
+(def assoc-matrix-nil #(assoc-matrix %1 %2 nil))
 
 (defn eliminate [state agroup]
   (filterv not-empty
     (mapv filterv-complement-nil?
-      (reduce assoc-in-nil state agroup))))
+      (reduce assoc-matrix-nil state agroup))))
 
 (defprotocol Path
   (groups [path])
@@ -220,18 +223,17 @@
 
 (def v1 [1])
 
-(defn merge-info-to-vector-from-a-seq [vector-c2 aseq]
-  (let [n (count aseq)]
-    (if (== 1 n)
-      (update-in vector-c2 v1 inc)
-      (update-in vector-c2 v0 #(+ (score n) %)))))
+(defn merge-info-to-vector-from-a-seq [vector-c2 n]
+  (if (== 1 n)
+    (update-in vector-c2 v1 inc)
+    (update-in vector-c2 v0 #(+ (score n) %))))
 
 (def v00 [0 0])
 
 (defn simple-max-estimation [path]
-  (let [gs (vals (apply merge-with concat
-                   (map (fn [avec] (group-by #(get-color (:table path) %) avec)) (current-state path))))
-        [s r] (reduce merge-info-to-vector-from-a-seq v00 gs)]
+  (let [table (:table path)
+        gc (frequencies (map #(get-color table %) (apply concat (current-state path))))
+        [s r] (reduce merge-info-to-vector-from-a-seq v00 (vals gc))]
     (+ (total-score path) s (bonus r))))
 
 (defn comp-score-count [coll] (-> coll count score))
