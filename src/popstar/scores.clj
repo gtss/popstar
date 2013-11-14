@@ -219,22 +219,13 @@
   (^long [path]
     (+ (total-score path) (-> path current-state count-matrix bonus))))
 
-(def v0 [0])
-
-(def v1 [1])
-
-(defn merge-info-to-vector-from-a-seq [vector-c2 n]
-  (if (== 1 n)
-    (update-in vector-c2 v1 inc)
-    (update-in vector-c2 v0 #(+ (score n) %))))
-
-(def v00 [0 0])
+(def >1 #(> % 1))
 
 (defn simple-max-estimation [path]
   (let [table (:table path)
-        gc (frequencies (map #(get-color table %) (apply concat (current-state path))))
-        [s r] (reduce merge-info-to-vector-from-a-seq v00 (vals gc))]
-    (+ (total-score path) s (bonus r))))
+        fc (frequencies (map #(get-color table %) (apply concat (current-state path))))
+        ss (filter >1 (vals fc))]
+    (apply + (total-score path) (bonus (- (count fc) (count ss))) (map score ss))))
 
 (defn comp-score-count [coll] (-> coll count score))
 
