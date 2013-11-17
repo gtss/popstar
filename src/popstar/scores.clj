@@ -176,7 +176,9 @@
       (get mii i i))))
 
 (defn group-from-line-group [[mpi mii]]
-  (filter count-pred (vals (select-group-by (group-by-pred-maker mii) key mpi))))
+  (let [coll (vals (select-group-by (group-by-pred-maker mii) key mpi))
+        result (filter count-pred coll)]
+    (with-meta result {:minus (- (count coll) (count result))})))
 
 (defn group [table state] (group-from-line-group (line-group table state)))
 
@@ -230,9 +232,8 @@
 (defn comp-score-count [coll] (-> coll count score))
 
 (defn simple-min-estimation [path]
-  (let [gs (groups path)
-        all-n (count-matrix (current-state path))]
-    (apply + (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
+  (let [gs (groups path)]
+    (apply + (total-score path) (bonus (:minus (meta gs))) (map comp-score-count gs))))
 
 (defn path-groups [path]
   (group (:table path) (current-state path)))
@@ -325,7 +326,7 @@
   (let [state (current-state path)
         difference (cond
                      (contains? result-map state) (diff path (result-map state))
-                     (> result-long (max-estimation path)) :lt ;
+                     (>= result-long (max-estimation path)) :lt ;
                      :else :nc )]
     (if (contains? gset difference)
       [(conj result-set path) (conj result-map [state path]) (max result-long (min-estimation path))]
