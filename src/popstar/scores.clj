@@ -325,7 +325,7 @@
   (let [state (current-state path)
         difference (cond
                      (contains? result-map state) (diff path (result-map state))
-                     (>= result-long (max-estimation path)) :lt ;
+                     (> result-long (max-estimation path)) :lt ;
                      :else :nc )]
     (if (contains? gset difference)
       [(conj result-set path) (conj result-map [state path]) (max result-long (min-estimation path))]
