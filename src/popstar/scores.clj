@@ -46,7 +46,7 @@
 
 (defn index-matrix [coll] (->> coll map-count (map-indexed get-line) vec))
 
-(defn count-matrix [coll] (->> coll map-count (apply +)))
+(defn count-matrix [coll] (->> coll map-count (reduce unchecked-add 0)))
 
 (def complement-nil? (complement nil?))
 
@@ -64,7 +64,7 @@
   (mapv (fn [x] (mapv #(component-maker x %) line-index)) line-index))
 
 (defn xy-component-maker [x j]
-  (let [head [x j] lastp [x (dec j)] p2 [(dec x) j]]
+  (let [head [x j] lastp [x (unchecked-dec j)] p2 [(unchecked-dec x) j]]
     (fn [[mpi mii]]
       (let [lasti (get mpi lastp)
             p2i (get mpi p2)
@@ -81,7 +81,7 @@
   (nth-in cached-xy-component [x j]))
 
 (defn x-component-maker [x j]
-  (let [head [x j] lastp [x (dec j)]]
+  (let [head [x j] lastp [x (unchecked-dec j)]]
     (fn [[mpi mii]]
       (let [lasti (get mpi lastp)]
         [(conj mpi [head lasti]) mii]))))
@@ -92,7 +92,7 @@
   (nth-in cached-x-component [x j]))
 
 (defn y-component-maker [x j]
-  (let [head [x j] p2 [(dec x) j]]
+  (let [head [x j] p2 [(unchecked-dec x) j]]
     (fn [[mpi mii]]
       (let [p2i (get mpi p2)]
         [(conj mpi [head p2i]) mii]))))
@@ -110,7 +110,7 @@
 (def cached-i-component (mapv (fn [x] (mapv (fn [y] (mapv #(i-component-maker x y %) (range 99))) line-index)) line-index))
 
 (defn i-component-selector [x j base]
-  (nth-in cached-i-component [x j (+ base j)]))
+  (nth-in cached-i-component [x j (unchecked-add base j)]))
 
 (def nil10 (vec (repeat 10 nil)))
 
@@ -140,7 +140,7 @@
     (reduce reverse-call obj aseq)))
 
 (defn one-line-group [type-selectors x]
-  (let [base (* 10 x)]
+  (let [base (unchecked-multiply 10 x)]
     (simple-reverse-comp
       (map-indexed
         (fn [j ts]
@@ -217,7 +217,7 @@
 
 (defn end-score
   (^long [path]
-    (+ (total-score path) (-> path current-state count-matrix bonus))))
+    (unchecked-add (total-score path) (-> path current-state count-matrix bonus))))
 
 (def >1 #(> % 1))
 
@@ -225,14 +225,16 @@
   (let [table (:table path)
         fc (frequencies (map #(get-color table %) (apply concat (current-state path))))
         ss (filter >1 (vals fc))]
-    (apply + (total-score path) (bonus (- (count fc) (count ss))) (map score ss))))
+    (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract (count fc) (count ss))))
+      (map score ss))))
 
 (defn comp-score-count [coll] (-> coll count score))
 
 (defn simple-min-estimation [path]
   (let [gs (groups path)
         all-n (count-matrix (current-state path))]
-    (apply + (total-score path) (bonus (- all-n (count-matrix gs))) (map comp-score-count gs))))
+    (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract all-n (count-matrix gs))))
+      (map comp-score-count gs))))
 
 (defn path-groups [path]
   (group (:table path) (current-state path)))
@@ -265,7 +267,7 @@
 
 (defn next-lazy-cached-path [prev-path last-action]
   (let [actions-fn (memoize1 (fn [_] (conj (actions prev-path) last-action)))
-        path-total-score-fn (memoize1 (fn [_] (+ (total-score prev-path) (comp-score-count last-action))))
+        path-total-score-fn (memoize1 (fn [_] (unchecked-add (total-score prev-path) (comp-score-count last-action))))
         current-state-fn (memoize1 (fn [_] (eliminate (current-state prev-path) last-action)))]
     (->LazyCachedPath
       (:table prev-path)
