@@ -55,10 +55,10 @@
 
 (def ^:dynamic dynamic-color-line color-line)
 
-(defn when= [l r v] (when (= l r) v))
+(defn when-identical? [l r v] (when (identical? l r) v))
 
 (defn same-indexs [line-state last-line-state]
-  (set (filter complement-nil? (map when= line-state last-line-state line-index))))
+  (set (filter complement-nil? (map when-identical? line-state last-line-state line-index))))
 
 (defn component-cache-maker [component-maker]
   (mapv (fn [x] (mapv #(component-maker x %) line-index)) line-index))
@@ -115,8 +115,8 @@
 (def nil10 (vec (repeat 10 nil)))
 
 (defn type-selector [current-color prev-color prev-line-color]
-  (let [scx (= current-color prev-color)
-        scy (= current-color prev-line-color)]
+  (let [scx (identical? current-color prev-color)
+        scy (identical? current-color prev-line-color)]
     (cond
       (and scy scx) xy-component-selector
       scx x-component-selector
