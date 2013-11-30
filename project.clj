@@ -4,5 +4,5 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.5.1"]]
-  :jvm-opts ["-server" "-Xmx1024M"]
+  :jvm-opts ["-server" "-Xms128M" "-Xmx1024M"]
   :aot [popstar.scores])
