@@ -4,15 +4,15 @@
 (defn mp ([x] (do (prn x) x))
   ([x pred] (do (when (pred x) (prn x)) x)))
 
-(def score (vec (concat [0 0] (for [n (range 2 101)] (* 5 n n)))))
+(def score (doall (vec (concat [0 0] (for [n (range 2 101)] (* 5 n n))))))
 
-(def line-index (range 10))
+(def line-index (doall (range 10)))
 
-(def bonus-vec (vec (for [n line-index] (- 2000 (* 20 n n)))))
+(def bonus-vec (doall (vec (for [n line-index] (- 2000 (* 20 n n))))))
 
 (defn bonus [n] (if (>= n 10) 0 (nth bonus-vec n)))
 
-(def colors #{:b :g :p :r :y })
+(def colors #{:b :g :p :r :y})
 
 (defn nth-in [coll ks] (reduce nth coll ks))
 
@@ -26,19 +26,19 @@
 
 (defn get-color
   ([table states point]
-    (nth-in table (nth-in states point)))
+   (nth-in table (nth-in states point)))
   ([table state]
-    (nth-in table state)))
+   (nth-in table state)))
 
 (defn inner-vec [ix iy]
   (mapv #(vector ix %) (range iy)))
 
-(def line-length (range 11))
+(def line-length (doall (range 11)))
 
 (def cached-index-lines
-  (vec (for [x line-index]
-         (vec (for [length line-length]
-                (inner-vec x length))))))
+  (doall (vec (for [x line-index]
+                (vec (for [length line-length]
+                       (inner-vec x length)))))))
 
 (defn get-line [x y] (nth-in cached-index-lines [x y]))
 
@@ -71,8 +71,8 @@
             lastii (get mii lasti lasti)
             p2ii (get mii p2i p2i)
             new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
-                      (< lastii p2ii) (conj mii [p2i lastii])
-                      :else mii)]
+                          (< lastii p2ii) (conj mii [p2i lastii])
+                          :else mii)]
         [(conj mpi [head lasti]) new-mii]))))
 
 (def cached-xy-component (component-cache-maker xy-component-maker))
@@ -112,7 +112,7 @@
 (defn i-component-selector [x j base]
   (nth-in cached-i-component [x j (unchecked-add base j)]))
 
-(def nil10 (vec (repeat 10 nil)))
+(def nil10 (doall (vec (repeat 10 nil))))
 
 (defn type-selector [current-color prev-color prev-line-color]
   (let [scx (identical? current-color prev-color)
@@ -158,7 +158,7 @@
 
 (defn line-group [table state]
   (nth (reduce-kv (line-group-reducer-maker table)
-         base-line-group-pair state) 0))
+                  base-line-group-pair state) 0))
 
 (defn select-group-by [f f2 coll]
   (persistent!
@@ -189,8 +189,8 @@
 
 (defn eliminate [state agroup]
   (filterv not-empty
-    (mapv filterv-complement-nil?
-      (reduce assoc-matrix-nil state agroup))))
+           (mapv filterv-complement-nil?
+                 (reduce assoc-matrix-nil state agroup))))
 
 (defprotocol Path
   (groups [path])
@@ -217,7 +217,7 @@
 
 (defn end-score
   (^long [path]
-    (unchecked-add (total-score path) (-> path current-state count-matrix bonus))))
+   (unchecked-add (total-score path) (-> path current-state count-matrix bonus))))
 
 (def >1 #(> % 1))
 
@@ -226,7 +226,7 @@
         fc (frequencies (map #(get-color table %) (apply concat (current-state path))))
         ss (filter >1 (vals fc))]
     (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract (count fc) (count ss))))
-      (map score ss))))
+            (map score ss))))
 
 (defn comp-score-count [coll] (-> coll count score))
 
@@ -234,7 +234,7 @@
   (let [gs (groups path)
         all-n (count-matrix (current-state path))]
     (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract all-n (count-matrix gs))))
-      (map comp-score-count gs))))
+            (map comp-score-count gs))))
 
 (defn path-groups [path]
   (group (:table path) (current-state path)))
@@ -278,57 +278,57 @@
       (memoize1 simple-max-estimation)
       (memoize1 simple-min-estimation))))
 
-(def differences #{:lt :gt :eq :nc }) ;nc is not comparable
+(def differences #{:lt :gt :eq :nc}) ;nc is not comparable
 
 (defn score-differ [path1 path2]
   (condp == (compare (total-score path1) (total-score path2))
     1 :gt ;
     -1 :lt ;
     0 :eq ;
-    :nc ))
+    :nc))
 
-(def fset #{nil :nc })
+(def fset #{nil :nc})
 
-(def gset #{:gt :nc })
+(def gset #{:gt :nc})
 
 (defn diff ([path1 path2]
-             (diff path1 path2 :nc score-differ))
+            (diff path1 path2 :nc score-differ))
   ([path1 path2 default-value & preds]
-    (cond
-      (and (nil? path1) (nil? path2)) :eq ;
-      (nil? path1) :lt ;
-      (nil? path2) :gt ;
-      :else (loop [[head & tail] preds]
-              (if head
-                (let [result (head path1 path2)]
-                  (if (contains? fset result)
-                    (recur tail)
-                    result))
-                default-value)))))
+   (cond
+     (and (nil? path1) (nil? path2)) :eq ;
+     (nil? path1) :lt ;
+     (nil? path2) :gt ;
+     :else (loop [[head & tail] preds]
+             (if head
+               (let [result (head path1 path2)]
+                 (if (contains? fset result)
+                   (recur tail)
+                   result))
+               default-value)))))
 
 (def path-comparator #(if (= %1 %2)
-                        0
-                        (let [me1 (min-estimation %1)
-                              me2 (min-estimation %2)]
-                          (cond
-                            (< me1 me2) 1
-                            (> me1 me2) -1
-                            :else (let [ts1 (total-score %1)
-                                        ts2 (total-score %2)]
-                                    (cond
-                                      (< ts1 ts2) 1
-                                      (> ts1 ts2) -1
-                                      :else (let [cg1 (count (groups %1))
-                                                  cg2 (count (groups %2))]
-                                              (if (> cg1 cg2) 1
-                                                -1))))))))
+                       0
+                       (let [me1 (min-estimation %1)
+                             me2 (min-estimation %2)]
+                         (cond
+                           (< me1 me2) 1
+                           (> me1 me2) -1
+                           :else (let [ts1 (total-score %1)
+                                       ts2 (total-score %2)]
+                                   (cond
+                                     (< ts1 ts2) 1
+                                     (> ts1 ts2) -1
+                                     :else (let [cg1 (count (groups %1))
+                                                 cg2 (count (groups %2))]
+                                             (if (> cg1 cg2) 1
+                                                             -1))))))))
 
 (defn children-reducer [[result-set result-map result-long :as prev] path]
   (let [state (current-state path)
         difference (cond
                      (contains? result-map state) (diff path (result-map state))
                      (> result-long (max-estimation path)) :lt ;
-                     :else :nc )]
+                     :else :nc)]
     (if (contains? gset difference)
       [(conj result-set path) (conj result-map [state path]) (max result-long (min-estimation path))]
       prev)))
