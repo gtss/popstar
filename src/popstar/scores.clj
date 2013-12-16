@@ -70,10 +70,10 @@
             p2i (get mpi p2)
             lastii (get mii lasti lasti)
             p2ii (get mii p2i p2i)
-            new-mii (cond (> lastii p2ii) (conj mii [lasti p2ii])
-                          (< lastii p2ii) (conj mii [p2i lastii])
+            new-mii (cond (> lastii p2ii) (assoc mii lasti p2ii)
+                          (< lastii p2ii) (assoc mii p2i lastii)
                           :else mii)]
-        [(conj mpi [head lasti]) new-mii]))))
+        [(assoc mpi head lasti) new-mii]))))
 
 (def cached-xy-component (component-cache-maker xy-component-maker))
 
@@ -84,7 +84,7 @@
   (let [head [x j] lastp [x (unchecked-dec j)]]
     (fn [[mpi mii]]
       (let [lasti (get mpi lastp)]
-        [(conj mpi [head lasti]) mii]))))
+        [(assoc mpi head lasti) mii]))))
 
 (def cached-x-component (component-cache-maker x-component-maker))
 
@@ -95,7 +95,7 @@
   (let [head [x j] p2 [(unchecked-dec x) j]]
     (fn [[mpi mii]]
       (let [p2i (get mpi p2)]
-        [(conj mpi [head p2i]) mii]))))
+        [(assoc mpi head p2i) mii]))))
 
 (def cached-y-component (component-cache-maker y-component-maker))
 
@@ -103,9 +103,9 @@
   (nth-in cached-y-component [x j]))
 
 (defn i-component-maker [x j i]
-  (let [hv [[x j] i]]
+  (let [head [x j]]
     (fn [[mpi mii]]
-      [(conj mpi hv) mii])))
+      [(assoc mpi head i) mii])))
 
 (def cached-i-component (mapv (fn [x] (mapv (fn [y] (mapv #(i-component-maker x y %) (range 99))) line-index)) line-index))
 
@@ -330,7 +330,7 @@
                      (> result-long (max-estimation path)) :lt ;
                      :else :nc)]
     (if (contains? gset difference)
-      [(conj result-set path) (conj result-map [state path]) (max result-long (min-estimation path))]
+      [(conj result-set path) (assoc result-map state path) (max result-long (min-estimation path))]
       prev)))
 
 (defn popstars [table]
