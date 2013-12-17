@@ -347,7 +347,7 @@
               (recur new-available new-saw (long new-estimation) wanted-score wanted))
             (let [score (end-score head)]
               (if (or (nil? wanted) (> score wanted-score))
-                (recur others saw (max estimation score) score head)
+                (recur others saw estimation score head)
                 (recur others saw estimation wanted-score wanted)))))
         [wanted-score wanted]))))
 
