@@ -16,6 +16,10 @@
 
 (defn nth-in [coll ks] (reduce nth coll ks))
 
+(defn nth2 [matrix x y] (nth (nth matrix x) y))
+
+(defn nth3 [matrix x y z] (nth (nth (nth matrix x) y) z))
+
 ;table [[:b :r :g ] [:p :r :r ] [:y :b :b ]]
 
 ;state [[[0 0] [0 2]] [[1 1] [1 2]] [[2 0] [2 1]]]
@@ -24,11 +28,8 @@
 
 ;color :g
 
-(defn get-color
-  ([table states point]
-   (nth-in table (nth-in states point)))
-  ([table state]
-   (nth-in table state)))
+(defn get-color [table state]
+  (nth-in table state))
 
 (defn inner-vec [ix iy]
   (mapv #(vector ix %) (range iy)))
@@ -40,7 +41,7 @@
                 (vec (for [length line-length]
                        (inner-vec x length)))))))
 
-(defn get-line [x y] (nth-in cached-index-lines [x y]))
+(defn get-line [x y] (nth2 cached-index-lines x y))
 
 (def map-count #(map count %))
 
@@ -78,7 +79,7 @@
 (def cached-xy-component (component-cache-maker xy-component-maker))
 
 (defn xy-component-selector [x j _]
-  (nth-in cached-xy-component [x j]))
+  (nth2 cached-xy-component x j))
 
 (defn x-component-maker [x j]
   (let [head [x j] lastp [x (unchecked-dec j)]]
@@ -89,7 +90,7 @@
 (def cached-x-component (component-cache-maker x-component-maker))
 
 (defn x-component-selector [x j _]
-  (nth-in cached-x-component [x j]))
+  (nth2 cached-x-component x j))
 
 (defn y-component-maker [x j]
   (let [head [x j] p2 [(unchecked-dec x) j]]
@@ -100,7 +101,7 @@
 (def cached-y-component (component-cache-maker y-component-maker))
 
 (defn y-component-selector [x j _]
-  (nth-in cached-y-component [x j]))
+  (nth2 cached-y-component x j))
 
 (defn i-component-maker [x j i]
   (let [head [x j]]
@@ -110,7 +111,7 @@
 (def cached-i-component (mapv (fn [x] (mapv (fn [y] (mapv #(i-component-maker x y %) (range 99))) line-index)) line-index))
 
 (defn i-component-selector [x j base]
-  (nth-in cached-i-component [x j (unchecked-add base j)]))
+  (nth3 cached-i-component x j (unchecked-add base j)))
 
 (def nil10 (doall (vec (repeat 10 nil))))
 
