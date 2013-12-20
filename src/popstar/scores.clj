@@ -67,8 +67,8 @@
 (defn xy-component-maker [x j]
   (let [head [x j] lastp [x (unchecked-dec j)] p2 [(unchecked-dec x) j]]
     (fn [[mpi mii]]
-      (let [lasti (get mpi lastp)
-            p2i (get mpi p2)
+      (let [lasti (mpi lastp)
+            p2i (mpi p2)
             lastii (get mii lasti lasti)
             p2ii (get mii p2i p2i)
             new-mii (cond (> lastii p2ii) (assoc mii lasti p2ii)
@@ -84,7 +84,7 @@
 (defn x-component-maker [x j]
   (let [head [x j] lastp [x (unchecked-dec j)]]
     (fn [[mpi mii]]
-      (let [lasti (get mpi lastp)]
+      (let [lasti (mpi lastp)]
         [(assoc mpi head lasti) mii]))))
 
 (def cached-x-component (component-cache-maker x-component-maker))
@@ -95,7 +95,7 @@
 (defn y-component-maker [x j]
   (let [head [x j] p2 [(unchecked-dec x) j]]
     (fn [[mpi mii]]
-      (let [p2i (get mpi p2)]
+      (let [p2i (mpi p2)]
         [(assoc mpi head p2i) mii]))))
 
 (def cached-y-component (component-cache-maker y-component-maker))
@@ -201,20 +201,20 @@
   (max-estimation [path])
   (^long min-estimation [path]))
 
-(defrecord LazyCachedPath [table groups actions total-score current-state max-estimation min-estimation]
+(defrecord LazyCachedPath [table groups-fn actions-fn total-score-fn current-state-fn max-estimation-fn min-estimation-fn]
   Path
   (groups [path]
-    ((:groups path) path))
+    (groups-fn path))
   (actions [path]
-    ((:actions path) path))
+    (actions-fn path))
   (total-score [path]
-    ((:total-score path) path))
+    (total-score-fn path))
   (current-state [path]
-    ((:current-state path) path))
+    (current-state-fn path))
   (max-estimation [path]
-    ((:max-estimation path) path))
+    (max-estimation-fn path))
   (min-estimation [path]
-    ((:min-estimation path) path)))
+    (min-estimation-fn path)))
 
 (defn end-score
   (^long [path]
@@ -222,8 +222,8 @@
 
 (def >1 #(> % 1))
 
-(defn simple-max-estimation [path]
-  (let [table (:table path)
+(defn simple-max-estimation [^LazyCachedPath path]
+  (let [table (.table path)
         fc (frequencies (map #(get-color table %) (apply concat (current-state path))))
         ss (filter >1 (vals fc))]
     (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract (count fc) (count ss))))
@@ -237,15 +237,15 @@
     (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract all-n (count-matrix gs))))
             (map comp-score-count gs))))
 
-(defn path-groups [path]
-  (group (:table path) (current-state path)))
+(defn path-groups [^LazyCachedPath path]
+  (group (.table path) (current-state path)))
 
 (defn empty-actions [_] [])
 
 (defn zero-score [_] 0)
 
-(defn path-init-state [path]
-  (index-matrix (:table path)))
+(defn path-init-state [^LazyCachedPath path]
+  (index-matrix (.table path)))
 
 (defn memoize1 [f]
   (let [mem (atom nil)]
@@ -266,12 +266,12 @@
     (memoize1 simple-max-estimation)
     (memoize1 simple-min-estimation)))
 
-(defn next-lazy-cached-path [prev-path last-action]
+(defn next-lazy-cached-path [^LazyCachedPath prev-path last-action]
   (let [actions-fn (memoize1 (fn [_] (conj (actions prev-path) last-action)))
         path-total-score-fn (memoize1 (fn [_] (unchecked-add (total-score prev-path) (comp-score-count last-action))))
         current-state-fn (memoize1 (fn [_] (eliminate (current-state prev-path) last-action)))]
     (->LazyCachedPath
-      (:table prev-path)
+      (.table prev-path)
       (memoize1 path-groups)
       actions-fn
       path-total-score-fn
