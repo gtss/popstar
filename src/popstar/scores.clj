@@ -14,8 +14,6 @@
 
 (def colors #{:b :g :p :r :y})
 
-(defn nth-in [coll ks] (reduce nth coll ks))
-
 (defn nth2 [matrix x y] (nth (nth matrix x) y))
 
 (defn nth3 [matrix x y z] (nth (nth (nth matrix x) y) z))
@@ -27,9 +25,6 @@
 ;point [0 1]
 
 ;color :g
-
-(defn get-color [table state]
-  (nth-in table state))
 
 (defn inner-vec [ix iy]
   (mapv #(vector ix %) (range iy)))
@@ -50,9 +45,6 @@
 (defn count-matrix [coll] (->> coll map-count (reduce unchecked-add 0)))
 
 (def complement-nil? (complement nil?))
-
-(defn color-line [get-color-fn line-state]
-  (mapv get-color-fn line-state))
 
 (defn when-identical? [l r v] (when (identical? l r) v))
 
@@ -145,14 +137,12 @@
 
 (def base-line-group-pair [[{} {}] nil])
 
-(defn line-group-reducer-maker
-  ([get-color-fn]
-   (line-group-reducer-maker #(color-line get-color-fn %) type-selectors-maker one-line-group))
-  ([color-line-fn type-selectors-maker-fn one-line-group-fn]
-   (fn [[inner-pair lastl] index line-state]
-     (let [lc (color-line-fn line-state)
-           sml (type-selectors-maker-fn lc)]
-       [((one-line-group-fn (sml lastl) index) inner-pair) lc]))))
+(defn line-group-reducer-maker [type-selectors-maker-fn one-line-group-fn]
+  (fn [[inner-pair lastl] index line-color]
+    (let [sml (type-selectors-maker-fn line-color)]
+      [((one-line-group-fn (sml lastl) index) inner-pair) line-color])))
+
+(def default-line-group-reducer (line-group-reducer-maker type-selectors-maker one-line-group))
 
 (defn line-group [line-group-reducer state]
   (nth (reduce-kv line-group-reducer base-line-group-pair state) 0))
@@ -219,8 +209,7 @@
 (def >1 #(> % 1))
 
 (defn simple-max-estimation [^LazyCachedPath path]
-  (let [table (.table path)
-        fc (frequencies (map #(get-color table %) (apply concat (current-state path))))
+  (let [fc (frequencies (apply concat (current-state path)))
         ss (filter >1 (vals fc))]
     (reduce unchecked-add (unchecked-add (total-score path) (bonus (unchecked-subtract (count fc) (count ss))))
             (map score ss))))
@@ -234,14 +223,11 @@
             (map comp-score-count gs))))
 
 (defn path-groups [^LazyCachedPath path]
-  (group (line-group-reducer-maker #(get-color (.table path) %)) (current-state path)))
+  (group default-line-group-reducer (current-state path)))
 
 (defn empty-actions [_] [])
 
 (defn zero-score [_] 0)
-
-(defn path-init-state [^LazyCachedPath path]
-  (index-matrix (.table path)))
 
 (defn memoize1 [f]
   (let [mem (atom nil)]
@@ -258,7 +244,7 @@
     (memoize1 group-fn)
     empty-actions
     zero-score
-    (memoize1 path-init-state)
+    (fn [_] table)
     (memoize1 simple-max-estimation)
     (memoize1 simple-min-estimation)))
 
@@ -332,10 +318,8 @@
 
 (defn popstars [table]
   (let [one-line-group-fn (memoize #(memoize (one-line-group %1 %2)))
-        get-color-fn #(get-color table %)
-        color-line-fn (memoize #(mapv get-color-fn %))
         selectors-maker-fn (memoize #(memoize (type-selectors-maker %)))
-        line-group-reducer (line-group-reducer-maker color-line-fn selectors-maker-fn one-line-group-fn)
+        line-group-reducer (line-group-reducer-maker selectors-maker-fn one-line-group-fn)
         group-fn (fn [path]
                    (group line-group-reducer (current-state path)))]
     (loop [available (sorted-set-by path-comparator (first-lazy-cached-path table group-fn))
