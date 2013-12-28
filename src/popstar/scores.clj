@@ -38,11 +38,7 @@
 
 (defn get-line [x y] (nth2 cached-index-lines x y))
 
-(def map-count #(map count %))
-
-(defn index-matrix [coll] (->> coll map-count (map-indexed get-line) vec))
-
-(defn count-matrix [coll] (->> coll map-count (reduce unchecked-add 0)))
+(defn count-matrix [coll] (->> coll (map count) (reduce unchecked-add 0)))
 
 (def complement-nil? (complement nil?))
 
