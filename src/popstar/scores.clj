@@ -40,12 +40,10 @@
 
 (defn count-matrix [coll] (->> coll (map count) (reduce unchecked-add 0)))
 
-(def complement-nil? (complement nil?))
-
 (defn when-identical? [l r v] (when (identical? l r) v))
 
 (defn same-indexs [line-state last-line-state]
-  (set (filter complement-nil? (map when-identical? line-state last-line-state line-index))))
+  (set (filter identity (map when-identical? line-state last-line-state line-index))))
 
 (defn component-cache-maker [component-maker]
   (mapv (fn [x] (mapv #(component-maker x %) line-index)) line-index))
@@ -163,7 +161,7 @@
 
 (defn group [line-group-reducer state] (group-from-line-group (line-group line-group-reducer state)))
 
-(def filterv-complement-nil? #(filterv complement-nil? %))
+(def filterv-identity #(filterv identity %))
 
 (defn assoc-matrix [matrix [x y] v]
   (assoc matrix x (assoc (nth matrix x) y v)))
@@ -172,7 +170,7 @@
 
 (defn eliminate [state agroup]
   (filterv not-empty
-           (mapv filterv-complement-nil?
+           (mapv filterv-identity
                  (reduce assoc-matrix-nil state agroup))))
 
 (defprotocol Path
