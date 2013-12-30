@@ -26,24 +26,7 @@
 
 ;color :g
 
-(defn inner-vec [ix iy]
-  (mapv #(vector ix %) (range iy)))
-
-(def line-length (doall (range 11)))
-
-(def cached-index-lines
-  (doall (vec (for [x line-index]
-                (vec (for [length line-length]
-                       (inner-vec x length)))))))
-
-(defn get-line [x y] (nth2 cached-index-lines x y))
-
 (defn count-matrix [coll] (->> coll (map count) (reduce unchecked-add 0)))
-
-(defn when-identical? [l r v] (when (identical? l r) v))
-
-(defn same-indexs [line-state last-line-state]
-  (set (filter identity (map when-identical? line-state last-line-state line-index))))
 
 (defn component-cache-maker [component-maker]
   (mapv (fn [x] (mapv #(component-maker x %) line-index)) line-index))
