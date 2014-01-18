@@ -211,9 +211,7 @@
     (fn [arg]
       (if-let [e @mem]
         e
-        (let [ret (f arg)]
-          (reset! mem ret)
-          ret)))))
+        (reset! mem (f arg))))))
 
 (defn first-lazy-cached-path [table group-fn]
   (->LazyCachedPath
